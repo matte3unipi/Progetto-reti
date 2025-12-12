@@ -60,6 +60,7 @@ Do”.
 - **PONG_LAVAGNA**: L’utente risponde al ping della lavagna. Questo identifica il fatto che sta
 ancora eseguendo l’attività.
 
+/**/
 - **HANDLE_CARD**: la lavagna invia, in ordine di porta, ad ogni utente connesso una card della
 colonna “To Do”. Questo comando, oltre alla card, include la lista delle porte degli utenti
 presenti (escluso il destinatario del messaggio), e il numero degli utenti presenti.
@@ -116,9 +117,9 @@ Dopo un certo tempo (si può usare la sleep(s) [#include<unistd.h>] nell’utent
 partire una fase di review prima di poter considerare l’attività terminata.
 
 Un utente è mandato in esecuzione sull'host come segue: \
-./utente <porta>
+./utente porta
 
-Dove <porta> è la porta dell’utente, che parte da 5679 e viene incrementata per ogni nuovo
+Dove porta è la porta dell’utente, che parte da 5679 e viene incrementata per ogni nuovo
 utente. Gli utenti sanno che la lavagna è alla porta 5678.
 La prima operazione che compie un utente è quella di registrarsi alla lavagna con il messaggio
 “HELLO”. Quando deciderà di smettere di partecipare all’esecuzione delle attività lo deve
