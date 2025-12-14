@@ -38,10 +38,18 @@ void hello_function(int sd, int porta_utente) {
     int bytes_letti = recv(sd, buffer, sizeof(buffer) - 1, 0);
     if (bytes_letti <= 0) {
         printf("Connessione chiusa dalla lavagna.\n");
+        exit(EXIT_FAILURE);
     }
     
     buffer[bytes_letti] = '\0';
-    printf("Risposta dalla lavagna: %s\n", buffer);
+
+    if(strcmp(buffer, "Porta già registrata.") == 0) {
+        printf("Errore: Porta già registrata.\n");
+        exit(EXIT_FAILURE);
+    }
+    else {
+        printf("Risposta dalla lavagna: %s\n", buffer);
+    }
 
     return;
 }
@@ -92,15 +100,7 @@ int main(int argc, char *argv[]) {
     /* Controllo che i comandi inseriti da tastiera siano quelli permessi.*/
     char comando[20];
 
-    while (1){
-        printf("Inserire comando?\n");
-        scanf("%s", comando);
-
-        if (strcmp(comando,"si") == 0)
-            system("clear");
-        else
-            continue;
-        
+    while (1){        
         printf("Inserisci il comando\n");
         scanf("%s", comando);
 

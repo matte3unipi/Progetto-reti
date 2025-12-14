@@ -9,7 +9,7 @@ typedef enum {
     DONE = 2
 } STATO_COLONNA;
 
-struct CARD {
+struct st_CARD {
     int id;
     STATO_COLONNA colonna;
     char testo[256];
@@ -17,17 +17,18 @@ struct CARD {
     time_t timestamp_ultima_modifica;
 };
 
-struct COLONNA {
+struct st_COLONNA {
     STATO_COLONNA stato;
     int numero_card;
-    struct CARD *cards;
+    struct st_CARD *cards;
 };
 
-
-struct LAVAGNA {
+struct st_LAVAGNA {
     int id;
-    struct COLONNA colonne[NUM_COLONNE];
+    struct st_COLONNA colonne[NUM_COLONNE];
     int *porta_utenti_connessi;
     int numero_utenti_connessi;
     int numero_card_totali;
 };
+
+struct st_LAVAGNA* lavagna = NULL;
