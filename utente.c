@@ -34,6 +34,15 @@ void hello_function(int sd, int porta_utente) {
         printf("Registrazione in corso.\n");
     }
 
+    char buffer[256];
+    int bytes_letti = recv(sd, buffer, sizeof(buffer) - 1, 0);
+    if (bytes_letti <= 0) {
+        printf("Connessione chiusa dalla lavagna.\n");
+    }
+    
+    buffer[bytes_letti] = '\0';
+    printf("Risposta dalla lavagna: %s\n", buffer);
+
     return;
 }
 
@@ -78,25 +87,6 @@ int main(int argc, char *argv[]) {
     }
 
     printf("Connessione alla lavagna avvenuta con successo.\n");
-
-
-    /*Test invio mess per connessione*/
-    printf("Invio messaggio di test alla lavagna...\n");
-    const char *messaggio = "HELLO";
-    int bytes_sent = send(sd, messaggio, strlen(messaggio), 0);
-    
-    if (bytes_sent < 0) {
-        perror("Errore durante l'invio");
-    }   
-    
-    char buffer[256];
-    int bytes_read = recv(sd, buffer, sizeof(buffer) - 1, 0);
-    if (bytes_read <= 0) {
-        printf("Connessione chiusa dalla lavagna.\n");
-    }
-    
-    buffer[bytes_read] = '\0';
-    printf("Risposta dalla lavagna: %s\n", buffer);
     
 
     /* Controllo che i comandi inseriti da tastiera siano quelli permessi.*/
