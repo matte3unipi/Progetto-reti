@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include "funzioni_x_msg.h"
 
 #define PORTA_LAVAGNA 5678
 #define RIGA_SEPARATORIA "<----------------------------------------\n"
@@ -32,7 +33,7 @@ void hello_function(int sd, int porta_utente) {
     char msg[20];
     sprintf(msg, "HELLO:%d", porta_utente);
 
-    int byte_inviati = send(sd, msg, strlen(msg), 0);
+    int byte_inviati = send_message(sd, msg);
     if (byte_inviati < 0) {
         perror("Errore durante l'invio del messaggio HELLO");
         exit(EXIT_FAILURE);
@@ -41,7 +42,7 @@ void hello_function(int sd, int porta_utente) {
     }
 
     char buffer[256];
-    int bytes_letti = recv(sd, buffer, sizeof(buffer) - 1, 0);
+    int bytes_letti = recv_message(sd, buffer, sizeof(buffer) - 1);
     if (bytes_letti <= 0) {
         printf("Connessione chiusa dalla lavagna.\n");
         exit(EXIT_FAILURE);
@@ -70,7 +71,7 @@ void quit_function(int sd, int porta_utente) {
     char msg[20];
     sprintf(msg, "QUIT:%d", porta_utente);
 
-    int byte_inviati = send(sd, msg, strlen(msg), 0);
+    int byte_inviati = send_message(sd, msg);
     if (byte_inviati < 0) {
         perror("Errore durante l'invio del messaggio QUIT");
         exit(EXIT_FAILURE);
@@ -79,7 +80,7 @@ void quit_function(int sd, int porta_utente) {
     }
 
     char buffer[256];
-    int bytes_letti = recv(sd, buffer, sizeof(buffer) - 1, 0);
+    int bytes_letti = recv_message(sd, buffer, sizeof(buffer) - 1);
     if (bytes_letti <= 0) {
         printf("Connessione chiusa dalla lavagna.\n");
         exit(EXIT_FAILURE);
@@ -149,12 +150,16 @@ int main(int argc, char *argv[]) {
                 printf(RIGA_SEPARATORIA);
 
                 // Invia il comando alla lavagna
-                if(strcmp(comando, "HELLO") == 0)
+                if(strcmp(comando, "HELLO") == 0) {
                     hello_function(sd, porta_utente);
-                if(strcmp(comando,"QUIT")== 0){
+                }
+                if(strcmp(comando,"QUIT")== 0) {
                     quit_function(sd, porta_utente);
                     close(sd);
                     return EXIT_SUCCESS;
+                }
+                if(strcmp(comando, "CREATE_CARD") == 0) {
+                    create_card_function(sd, porta_utente);
                 }
 
                 printf(RIGA_SEPARATORIA);

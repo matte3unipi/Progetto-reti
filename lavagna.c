@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include "strutture_lavagna.h"
+#include "funzioni_x_msg.h"
 
 
 int registrazione_utente(int porta_utente){
@@ -29,6 +30,7 @@ int registrazione_utente(int porta_utente){
         exit(EXIT_FAILURE);
     }
 
+    /*Salvo la porta dell'utente in coda*/
     lavagna->porta_utenti_connessi[lavagna->numero_utenti_connessi - 1] = porta_utente;
 
     return 0;
@@ -37,6 +39,7 @@ int registrazione_utente(int porta_utente){
 int rimozione_utente(int porta_utente){
     int trovato = 0;
 
+    /*Cerco l'utente e lo rimuovo dalla lista*/
     for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
         if(lavagna->porta_utenti_connessi[i] == porta_utente) {
             trovato = 1;
@@ -46,6 +49,7 @@ int rimozione_utente(int porta_utente){
         }
     }
 
+    /*Se ho trovato l'utente rialloco le porte*/
     if(trovato){
         lavagna->numero_utenti_connessi--;
         lavagna->porta_utenti_connessi = realloc(lavagna->porta_utenti_connessi, 
@@ -69,19 +73,17 @@ int show_lavagna(){
 void* gestione_utente(void* arg){
     int sd_utente = (int)(intptr_t)arg;
     char buffer[256];
-    int bytes_letti = 0;
     int porta_utente = 0;
 
     /*Arrivo comandi da parte dell'utente*/
     while(1){
-        bytes_letti = recv(sd_utente, buffer, sizeof(buffer)-1, 0);
-        if (bytes_letti <= 0) {
+        /*Ricezione messaggio*/
+        if(recv_message(sd_utente, buffer, sizeof(buffer)) < 0) {
             printf("Connessione utente sulla porta %d chiusa.\n", sd_utente);
             close(sd_utente);
             return NULL;
         }
 
-        buffer[bytes_letti] = '\0';
         printf("Comando ricevuto dall'utente: %s\n", buffer);
 
         /*Gestione comandi*/
@@ -91,13 +93,13 @@ void* gestione_utente(void* arg){
 
             if (registrazione_utente(porta_utente) < 0) {
                 const char *risposta = "Porta già registrata.";
-                send(sd_utente, risposta, strlen(risposta), 0);
+                send_message(sd_utente, risposta);
                 continue;
             }
             
             printf("Utente alla porta %d registrato.\n", porta_utente);
             const char *risposta = "Registrazione avvenuta con successo.";
-            send(sd_utente, risposta, strlen(risposta), 0);
+            send_message(sd_utente, risposta);
             continue;   
         }
         
@@ -105,7 +107,7 @@ void* gestione_utente(void* arg){
         if (strcmp(buffer, "SHOW_LAVAGNA") == 0) {
             show_lavagna();
             const char *risposta = "Stato lavagna mostrato.";
-            send(sd_utente, risposta, strlen(risposta), 0);
+            send_message(sd_utente, risposta);
             continue;
         }
 
@@ -114,7 +116,7 @@ void* gestione_utente(void* arg){
             printf("Utente sulla porta %d disconnesso.\n", porta_utente);
             rimozione_utente(porta_utente);
             const char *risposta = "Connessione terminata.";
-            send(sd_utente, risposta, strlen(risposta), 0);
+            send_message(sd_utente, risposta);
             close(sd_utente);
             break;
         }
@@ -124,7 +126,7 @@ void* gestione_utente(void* arg){
     return NULL;
 }
 
-
+/*Funzione per la creazione della lavagna e inizializzazione*/
 void creazione_lavagna(){
     lavagna = malloc(sizeof(struct st_LAVAGNA));
 
@@ -149,7 +151,6 @@ void creazione_lavagna(){
 
 
 int main(){
-    /*Creazione lavagna*/
     creazione_lavagna();
 
     int sd, new_socket;
