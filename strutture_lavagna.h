@@ -2,6 +2,7 @@
 #define MIN_CARD 10 
 #define NUM_COLONNE 3
 #define MIN_UTENTI 4
+#define RIGA_SEPARATORIA "----------------------------------------\n"
 
 typedef enum {
     TO_DO = 0,

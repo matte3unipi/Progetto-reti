@@ -9,6 +9,7 @@
 #include <pthread.h>
 
 #define PORTA_LAVAGNA 5678
+#define RIGA_SEPARATORIA "<----------------------------------------\n"
 
 const char *comandi_validi[] = {
     "HELLO", "QUIT", "CREATE_CARD", 
@@ -16,13 +17,18 @@ const char *comandi_validi[] = {
     "SHOW_LAVAGNA"
 };
 const int num_comandi = 7;
-
+int hello_eseguito = 0;
 
 
 
 
 /*Funzione per gestire il comando HELLO */
 void hello_function(int sd, int porta_utente) {
+    if(hello_eseguito) {
+        printf("Comando HELLO già eseguito in questa sessione.\n");
+        return;
+    }
+
     char msg[20];
     sprintf(msg, "HELLO:%d", porta_utente);
 
@@ -31,7 +37,7 @@ void hello_function(int sd, int porta_utente) {
         perror("Errore durante l'invio del messaggio HELLO");
         exit(EXIT_FAILURE);
     } else {
-        printf("Registrazione in corso.\n");
+        printf("Registrazione in corso...\n");
     }
 
     char buffer[256];
@@ -49,12 +55,43 @@ void hello_function(int sd, int porta_utente) {
     }
     else {
         printf("Risposta dalla lavagna: %s\n", buffer);
+        hello_eseguito = 1;
     }
 
     return;
 }
 
+void quit_function(int sd, int porta_utente) {
+    if(!hello_eseguito) {
+        printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
+        return;
+    }
 
+    char msg[20];
+    sprintf(msg, "QUIT:%d", porta_utente);
+
+    int byte_inviati = send(sd, msg, strlen(msg), 0);
+    if (byte_inviati < 0) {
+        perror("Errore durante l'invio del messaggio QUIT");
+        exit(EXIT_FAILURE);
+    } else {
+        printf("Invio comando QUIT in corso...\n");
+    }
+
+    char buffer[256];
+    int bytes_letti = recv(sd, buffer, sizeof(buffer) - 1, 0);
+    if (bytes_letti <= 0) {
+        printf("Connessione chiusa dalla lavagna.\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    buffer[bytes_letti] = '\0';
+    printf("Risposta dalla lavagna: %s\n", buffer);
+
+    hello_eseguito = 0;
+
+    return;
+}
 
 
 int main(int argc, char *argv[]) {
@@ -109,10 +146,18 @@ int main(int argc, char *argv[]) {
             if (strcmp(comando, comandi_validi[i]) == 0) {
                 comando_valido = 1;
 
+                printf(RIGA_SEPARATORIA);
+
                 // Invia il comando alla lavagna
                 if(strcmp(comando, "HELLO") == 0)
                     hello_function(sd, porta_utente);
+                if(strcmp(comando,"QUIT")== 0){
+                    quit_function(sd, porta_utente);
+                    close(sd);
+                    return EXIT_SUCCESS;
+                }
 
+                printf(RIGA_SEPARATORIA);
                 break;
             }
         }
@@ -123,5 +168,5 @@ int main(int argc, char *argv[]) {
     }
     
     close(sd);
-    return 0;
+    return EXIT_SUCCESS;
 }
