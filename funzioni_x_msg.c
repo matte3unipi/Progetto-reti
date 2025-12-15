@@ -10,12 +10,10 @@ int send_message(int sd, const char *msg) {
     unsigned short msg_len_network = htons(msg_len);
     
     if (send(sd, &msg_len_network, sizeof(msg_len_network), 0) < 0) {
-        perror("Errore invio lunghezza");
         return -1;
     }
     
     if (send(sd, msg, msg_len, 0) < 0) {
-        perror("Errore invio messaggio");
         return -1;
     }
     
@@ -38,7 +36,8 @@ int recv_message(int sd, char *buffer, int max_len) {
     }
     
     int bytes_letti = recv(sd, buffer, msg_len, 0);
-    if (bytes_letti <= 0) return -1;
+    if (bytes_letti <= 0) 
+        return -1;
     
     buffer[bytes_letti] = '\0';
     return bytes_letti;

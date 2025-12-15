@@ -9,9 +9,11 @@
 #include <pthread.h>
 #include "funzioni_x_msg.h"
 
+/*Definizioni*/
 #define PORTA_LAVAGNA 5678
 #define RIGA_SEPARATORIA "<----------------------------------------\n"
 
+/*Dati utili per il codice*/
 const char *comandi_validi[] = {
     "HELLO", "QUIT", "CREATE_CARD", 
     "REQUEST_USER_LIST", "REVIEW_CARD", "CARD_DONE",
@@ -33,8 +35,7 @@ void hello_function(int sd, int porta_utente) {
     char msg[20];
     sprintf(msg, "HELLO:%d", porta_utente);
 
-    int byte_inviati = send_message(sd, msg);
-    if (byte_inviati < 0) {
+    if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio HELLO");
         exit(EXIT_FAILURE);
     } else {
@@ -42,13 +43,10 @@ void hello_function(int sd, int porta_utente) {
     }
 
     char buffer[256];
-    int bytes_letti = recv_message(sd, buffer, sizeof(buffer) - 1);
-    if (bytes_letti <= 0) {
+    if(recv_message(sd, buffer, sizeof(buffer) - 1) <= 0) {
         printf("Connessione chiusa dalla lavagna.\n");
         exit(EXIT_FAILURE);
     }
-    
-    buffer[bytes_letti] = '\0';
 
     if(strcmp(buffer, "Porta già registrata.") == 0) {
         printf("Errore: Porta già registrata.\n");
@@ -62,6 +60,7 @@ void hello_function(int sd, int porta_utente) {
     return;
 }
 
+/*Funzione per gestire il comando QUIT */
 void quit_function(int sd, int porta_utente) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
@@ -71,8 +70,7 @@ void quit_function(int sd, int porta_utente) {
     char msg[20];
     sprintf(msg, "QUIT:%d", porta_utente);
 
-    int byte_inviati = send_message(sd, msg);
-    if (byte_inviati < 0) {
+    if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio QUIT");
         exit(EXIT_FAILURE);
     } else {
@@ -80,13 +78,11 @@ void quit_function(int sd, int porta_utente) {
     }
 
     char buffer[256];
-    int bytes_letti = recv_message(sd, buffer, sizeof(buffer) - 1);
-    if (bytes_letti <= 0) {
+    if(recv_message(sd, buffer, sizeof(buffer) - 1) <= 0) {
         printf("Connessione chiusa dalla lavagna.\n");
         exit(EXIT_FAILURE);
     }
     
-    buffer[bytes_letti] = '\0';
     printf("Risposta dalla lavagna: %s\n", buffer);
 
     hello_eseguito = 0;
@@ -95,6 +91,49 @@ void quit_function(int sd, int porta_utente) {
 }
 
 
+/*Funzione per gestire il comando CREATE_CARD */
+void create_card_function(int sd, int porta_utente) {
+    if(!hello_eseguito) {
+        printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
+        return;
+    }
+
+    printf(" > Creazione nuova card < \n");
+
+    char id_card_str[8];
+    printf("Inserisci l'ID della nuova card: ");
+    scanf("%s", id_card_str);
+
+    char colonna_card_str[16];
+    printf("Inserisci la colonna della nuova card (TO_DO, DOING, DONE): ");
+    scanf("%s", colonna_card_str);
+
+    char testo_card_str[256];
+    printf("Inserisci il testo attività della nuova card: ");
+    scanf(" %[^\n]", testo_card_str);
+
+    char msg[300];
+    sprintf(msg, "CREATE_CARD:%s:%s:%s", id_card_str, colonna_card_str, testo_card_str);
+
+    if(send_message(sd, msg) < 0) {
+        perror("Errore durante l'invio del messaggio CREATE_CARD");
+        exit(EXIT_FAILURE);
+    } else {
+        printf("Invio comando CREATE_CARD in corso...\n");
+    }
+
+    char buffer[256];
+    if(recv_message(sd, buffer, sizeof(buffer) - 1) <= 0) {
+        printf("Connessione chiusa dalla lavagna.\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    printf("Risposta dalla lavagna: %s\n", buffer);
+
+    return;
+}
+
+/*--------------------MAIN-------------------*/
 int main(int argc, char *argv[]) {
     int porta_utente = 0;
     
