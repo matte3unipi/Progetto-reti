@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
@@ -21,7 +22,7 @@ const char *comandi_validi[] = {
 };
 const int num_comandi = 7;
 int hello_eseguito = 0;
-
+int lista_utenti [100];
 
 
 
@@ -133,6 +134,58 @@ void create_card_function(int sd, int porta_utente) {
     return;
 }
 
+/*Funzione per gestire il comando REQUEST_USER_LIST */
+void request_user_list_function(int sd, int porta_utente) {
+    if(!hello_eseguito) {
+        printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
+        return;
+    }
+
+    char msg[] = "REQUEST_USER_LIST";
+    if(send_message(sd, msg) < 0) {
+        perror("Errore durante l'invio del messaggio REQUEST_USER_LIST");
+        exit(EXIT_FAILURE);
+    } else {
+        printf("Invio comando REQUEST_USER_LIST in corso...\n");
+    }
+
+    char buffer[256];
+    if(recv_message(sd, buffer, sizeof(buffer) - 1) <= 0 ) {
+        printf("Connessione chiusa dalla lavagna.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Risposta dalla lavagna: %s\n", buffer);
+
+    /*Salvo la lista degli utenti ricevuta*/
+    char *token = strtok(buffer, ":");
+    strtok(NULL, ":");  /* Salta il comando */
+    
+    int num_utenti = 0;
+    while((token = strtok(NULL, ":")) != NULL) {
+        lista_utenti[num_utenti++] = atoi(token);
+    }
+    return;
+}
+
+
+/*Funzione per gestire i messaggi in arrivo dalla lavagna*/
+void* gestione_ascolto(void* arg) {
+    int sd = (int)(intptr_t)arg;
+    char buffer[256];
+    while(1) {
+        /*Ricezione messaggio*/
+        if(recv_message(sd, buffer, sizeof(buffer)) < 0) {
+            printf("Connessione alla lavagna chiusa.\n");
+            close(sd);
+            exit(EXIT_FAILURE);
+        }
+    }
+    return NULL;
+}
+
+
+
 /*--------------------MAIN-------------------*/
 int main(int argc, char *argv[]) {
     int porta_utente = 0;
@@ -173,6 +226,10 @@ int main(int argc, char *argv[]) {
 
     printf("Connessione alla lavagna avvenuta con successo.\n");
     
+    /*Creazione thread per ascoltare dati in arrivo */
+    // pthread_t thread_ascolto;
+    // pthread_create(&thread_ascolto, NULL, gestione_ascolto, (void *)(intptr_t)sd);
+    // pthread_detach(thread_ascolto);
 
     /* Controllo che i comandi inseriti da tastiera siano quelli permessi.*/
     char comando[20];
@@ -199,6 +256,9 @@ int main(int argc, char *argv[]) {
                 }
                 if(strcmp(comando, "CREATE_CARD") == 0) {
                     create_card_function(sd, porta_utente);
+                }
+                if(strcmp(comando, "REQUEST_USER_LIST") == 0) {
+                    request_user_list_function(sd, porta_utente);
                 }
 
                 printf(RIGA_SEPARATORIA);

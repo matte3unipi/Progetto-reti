@@ -64,6 +64,22 @@ int rimozione_utente(int porta_utente){
     return 0;
 }
 
+
+
+
+
+/*Funzione per controllo valore colonna passato*/
+int controllo_stato(const char *str) {
+    if(strcmp(str, "TO_DO") == 0) 
+        return TO_DO;
+    if(strcmp(str, "DOING") == 0) 
+        return DOING;
+    if(strcmp(str, "DONE") == 0) 
+        return DONE;
+    return -1; 
+}
+
+/*Funzione per la creazione di una nuova card*/
 int create_card(const char* comando, int porta_utente){
     /* Parsing del comando */
     char card_copia[300];
@@ -76,14 +92,8 @@ int create_card(const char* comando, int porta_utente){
     int id_card = atoi(token);
 
     token = strtok(NULL, ":");
-    STATO_COLONNA colonna;
-    if (strcmp(token, "TO_DO") == 0) {
-        colonna = TO_DO;
-    } else if (strcmp(token, "DOING") == 0) {
-        colonna = DOING;
-    } else if (strcmp(token, "DONE") == 0) {
-        colonna = DONE;
-    } else {
+    STATO_COLONNA colonna = controllo_stato(token);
+    if(colonna == -1){
         return -1;
     }
     token = strtok(NULL, ":");
@@ -114,6 +124,123 @@ int create_card(const char* comando, int porta_utente){
 }
 
 
+/*Funzione per spostare una card da una colonna ad un'altra*/
+int move_card(int id_card, STATO_COLONNA vecchia_colonna){
+    /* Cerco la card nella lavagna */
+    int vecchia_col_id = (int)vecchia_colonna;
+    int trovata = 0;
+    struct st_CARD card_select;
+    int posizione_card = -1;
+
+    for(int i = 0; i < lavagna->colonne[vecchia_col_id].numero_card; i++){
+        if(lavagna->colonne[vecchia_col_id].cards[i].id == id_card){
+            card_select = lavagna->colonne[vecchia_col_id].cards[i];
+            posizione_card = i;
+            trovata = 1;
+            break;
+        }
+    }
+    if(!trovata){
+        return -1;
+    }
+
+    /* Rimuovo la card dalla vecchia colonna */
+    for(int j = posizione_card; j < lavagna->colonne[vecchia_col_id].numero_card - 1; j++){
+        lavagna->colonne[vecchia_col_id].cards[j] = lavagna->colonne[vecchia_col_id].cards[j + 1];
+    }
+    lavagna->colonne[vecchia_col_id].numero_card--;
+    lavagna->colonne[vecchia_col_id].cards = realloc(lavagna->colonne[vecchia_col_id].cards, 
+        lavagna->colonne[vecchia_col_id].numero_card * sizeof(struct st_CARD));
+
+    /* Controllo realloc */
+    if(lavagna->colonne[vecchia_col_id].numero_card > 0 && lavagna->colonne[vecchia_col_id].cards == NULL){
+        perror("Errore nello spostamento della card");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Aggiungo la card alla nuova colonna */
+    int nuova_col_id = (int)(vecchia_colonna + 1);
+    lavagna->colonne[nuova_col_id].numero_card++;
+    lavagna->colonne[nuova_col_id].cards = realloc(lavagna->colonne[nuova_col_id].cards, 
+        lavagna->colonne[nuova_col_id].numero_card * sizeof(struct st_CARD));
+        if(lavagna->colonne[nuova_col_id].cards == NULL){
+        perror("Errore nello spostamento della card");
+        exit(EXIT_FAILURE);
+    }
+    lavagna->colonne[nuova_col_id].cards[lavagna->colonne[nuova_col_id].numero_card - 1] = card_select;      
+
+    return 0;
+}
+
+
+/*Funzione per spostare una card da TO_DO a DOING in seguito ad un ack*/
+int ack_card(const char* buffer){
+    /*Estraggo l'id e la colonna della card in questione*/
+    char ack_copia[256];
+    strncpy(ack_copia, buffer, sizeof(ack_copia));
+    ack_copia[sizeof(ack_copia) - 1] = '\0';
+    char *token = strtok(ack_copia, ":");
+    token = strtok(NULL, ":");
+    int id_card = atoi(token);
+    token = strtok(NULL, ":");
+    STATO_COLONNA vecchia_colonna = controllo_stato(token);
+
+    /*Controllo che sia TO_DO*/
+    if(vecchia_colonna != TO_DO){
+        return -1;
+    }
+    if(move_card(id_card, vecchia_colonna) != 0){
+        return -1;
+    }
+    return 0;
+}
+
+/*Funzione per spostare una card da DOING a DONE in seguito ad un ack*/
+int card_done(const char* buffer){
+    /*Estraggo l'id e la colonna della card in questione*/
+    char ack_copia[256];
+    strncpy(ack_copia, buffer, sizeof(ack_copia));
+    ack_copia[sizeof(ack_copia) - 1] = '\0';
+    char *token = strtok(ack_copia, ":");
+    token = strtok(NULL, ":");
+    int id_card = atoi(token);
+    token = strtok(NULL, ":");
+    STATO_COLONNA vecchia_colonna = controllo_stato(token);
+
+    /*Controllo che sia DOING*/
+    if(vecchia_colonna != DOING){
+        return -1;
+    }
+    if(move_card(id_card, vecchia_colonna) != 0){
+        return -1;
+    }
+    return 0;
+}
+
+
+/*Funzione per inviare la lista delle porte salvate*/
+int send_user_list(int sd){
+    char lista[256];
+    strcpy(lista, "SEND_USER_LIST:");
+    for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
+        char porta_str[10];
+        sprintf(porta_str, "%d", lavagna->porta_utenti_connessi[i]);
+        strcat(lista, porta_str);
+        if(i < lavagna->numero_utenti_connessi - 1){
+            strcat(lista, ":");
+        }
+    }
+
+    if(send_message(sd, lista) < 0){
+        perror("Errore nell'invio della lista utenti");
+        return -1;
+    }
+
+    return 0;
+}
+
+
+/*Funzione per la visualizzazione della lavagna*/
 int show_lavagna(){
     printf("----------------------------------------------------------------\n");
     printf("|                         Lavagna - %d                          |\n", lavagna->id);
@@ -184,6 +311,8 @@ int show_lavagna(){
 }
 
 
+
+/*Funzione per la gestione di un utente connesso*/
 void* gestione_utente(void* arg){
     int sd_utente = (int)(intptr_t)arg;
     char buffer[256];
@@ -198,6 +327,7 @@ void* gestione_utente(void* arg){
             return NULL;
         }
 
+        printf(RIGA_SEPARATORIA);
         printf("Comando ricevuto dall'utente: %s\n", buffer);
 
         /*Gestione comandi*/
@@ -258,11 +388,39 @@ void* gestione_utente(void* arg){
             send_message(sd_utente, risposta);
             continue;
         }
-        
+
+        /*Comando ACK_CARD*/
+        if(strncmp(buffer, "ACK_CARD:", 9) == 0){
+            printf("Comando ACK_CARD ricevuto dalla porta %d.\n", porta_utente);
+            if(ack_card(buffer) != 0){
+                const char *risposta = "Errore nell'ack della card.";
+                send_message(sd_utente, risposta);
+                continue;
+            }
+
+            const char *risposta = "Card acked con successo.";
+            send_message(sd_utente, risposta);
+            continue;
+        }
+
+        /*Comando REQUEST_USER_LIST*/
+        if (strcmp(buffer, "REQUEST_USER_LIST") == 0) {
+            if(send_user_list(sd_utente) != 0){
+                const char *risposta = "Errore nell'invio della lista utenti.";
+                send_message(sd_utente, risposta);
+                continue;
+            }
+
+            printf("Lista utenti inviata con successo alla porta %d.\n", porta_utente);
+            continue;
+        }
     }
 
     return NULL;
 }
+
+
+
 
 /*Funzione per la creazione della lavagna e inizializzazione*/
 void creazione_lavagna(){
@@ -287,13 +445,14 @@ void creazione_lavagna(){
     printf("Lavagna creata e pronta a ricevere connessioni.\n");
 }
 
+
+/*Funzione per la gestione dei comandi da terminale della lavagna*/
 void* gestione_lavagna(void* arg){
-    /*Gestione comandi lavagna da terminale*/
     char comando[50];
 
     while(1){
         fgets(comando, sizeof(comando), stdin);
-        comando[strcspn(comando, "\n")] = 0; // Rimuovi il newline
+        comando[strcspn(comando, "\n")] = 0; 
 
         if(strcmp(comando, "SHOW_LAVAGNA") == 0){
             show_lavagna();
@@ -306,8 +465,11 @@ void* gestione_lavagna(void* arg){
 }
 
 
+
+/*--------------------MAIN-------------------*/
 int main(){
     creazione_lavagna();
+    show_lavagna();
 
     int sd, new_socket;
     struct sockaddr_in lavagna_addr, client_addr;
@@ -339,7 +501,8 @@ int main(){
     /* Accettazione connessioni in arrivo */
     while (1)
     {
-        printf("In attesa di connessioni...\n");
+        printf(RIGA_SEPARATORIA);
+        printf("In attesa di altre connessioni...\n");
 
         if((new_socket = accept(sd, (struct sockaddr *)&client_addr, &len)) < 0){
             perror("Errore nell'accettazione della connessione");
