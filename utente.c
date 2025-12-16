@@ -23,6 +23,7 @@ const char *comandi_validi[] = {
 const int num_comandi = 7;
 int hello_eseguito = 0;
 int lista_utenti [100];
+pthread_mutex_t ascolto = PTHREAD_MUTEX_INITIALIZER;
 
 
 
@@ -43,29 +44,14 @@ void hello_function(int sd, int porta_utente) {
         printf("Registrazione in corso...\n");
     }
 
-    char buffer[256];
-    if(recv_message(sd, buffer, sizeof(buffer) - 1) <= 0) {
-        printf("Connessione chiusa dalla lavagna.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    if(strcmp(buffer, "Porta già registrata.") == 0) {
-        printf("Errore: Porta già registrata.\n");
-        exit(EXIT_FAILURE);
-    }
-    else {
-        printf("Risposta dalla lavagna: %s\n", buffer);
-        hello_eseguito = 1;
-    }
-
     return;
 }
 
 /*Funzione per gestire il comando QUIT */
-void quit_function(int sd, int porta_utente) {
+int quit_function(int sd, int porta_utente) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
-        return;
+        return -1;
     }
 
     char msg[20];
@@ -75,20 +61,12 @@ void quit_function(int sd, int porta_utente) {
         perror("Errore durante l'invio del messaggio QUIT");
         exit(EXIT_FAILURE);
     } else {
-        printf("Invio comando QUIT in corso...\n");
+        printf("Comando QUIT eseguito.\n");
     }
-
-    char buffer[256];
-    if(recv_message(sd, buffer, sizeof(buffer) - 1) <= 0) {
-        printf("Connessione chiusa dalla lavagna.\n");
-        exit(EXIT_FAILURE);
-    }
-    
-    printf("Risposta dalla lavagna: %s\n", buffer);
 
     hello_eseguito = 0;
 
-    return;
+    return 0;
 }
 
 
@@ -120,16 +98,8 @@ void create_card_function(int sd, int porta_utente) {
         perror("Errore durante l'invio del messaggio CREATE_CARD");
         exit(EXIT_FAILURE);
     } else {
-        printf("Invio comando CREATE_CARD in corso...\n");
+        printf("Comando CREATE_CARD eseguito.\n");
     }
-
-    char buffer[256];
-    if(recv_message(sd, buffer, sizeof(buffer) - 1) <= 0) {
-        printf("Connessione chiusa dalla lavagna.\n");
-        exit(EXIT_FAILURE);
-    }
-    
-    printf("Risposta dalla lavagna: %s\n", buffer);
 
     return;
 }
@@ -146,25 +116,9 @@ void request_user_list_function(int sd, int porta_utente) {
         perror("Errore durante l'invio del messaggio REQUEST_USER_LIST");
         exit(EXIT_FAILURE);
     } else {
-        printf("Invio comando REQUEST_USER_LIST in corso...\n");
+        printf("Comando REQUEST_USER_LIST eseguito.\n");
     }
 
-    char buffer[256];
-    if(recv_message(sd, buffer, sizeof(buffer) - 1) <= 0 ) {
-        printf("Connessione chiusa dalla lavagna.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Risposta dalla lavagna: %s\n", buffer);
-
-    /*Salvo la lista degli utenti ricevuta*/
-    char *token = strtok(buffer, ":");
-    strtok(NULL, ":");  /* Salta il comando */
-    
-    int num_utenti = 0;
-    while((token = strtok(NULL, ":")) != NULL) {
-        lista_utenti[num_utenti++] = atoi(token);
-    }
     return;
 }
 
@@ -173,14 +127,38 @@ void request_user_list_function(int sd, int porta_utente) {
 void* gestione_ascolto(void* arg) {
     int sd = (int)(intptr_t)arg;
     char buffer[256];
+    
     while(1) {
-        /*Ricezione messaggio*/
-        if(recv_message(sd, buffer, sizeof(buffer)) < 0) {
-            printf("Connessione alla lavagna chiusa.\n");
-            close(sd);
-            exit(EXIT_FAILURE);
+        if(recv_message(sd, buffer, sizeof(buffer) - 1) <= 0) {
+            printf("Connessione chiusa dalla lavagna.\n");
+            break;
         }
+    
+        /* Registrazione HELLO */
+        if (strncmp(buffer, "Registrazione avvenuta con successo.", 36) == 0) {
+            hello_eseguito = 1;
+        }
+        /* Lista utenti ricevuta */
+        else if (strncmp(buffer, "SEND_USER_LIST:", 15) == 0) {
+            /* Salvo la lista per comandi futuri */
+            char copia[256];
+            strncpy(copia, buffer, sizeof(copia) - 1);
+            char *token = strtok(copia, ":");
+            strtok(NULL, ":"); 
+            int num_utenti = 0;
+            while((token = strtok(NULL, ":")) != NULL) {
+                lista_utenti[num_utenti++] = atoi(token);
+            }
+        }
+        else if(strncmp(buffer,"HANDLER_CARD:",13)==0){
+            handler_card_function(buffer + 13);
+        }
+        
+        /* Messaggi generici */
+        printf("\n[LAVAGNA] %s\n", buffer);
+
     }
+    
     return NULL;
 }
 
@@ -189,6 +167,7 @@ void* gestione_ascolto(void* arg) {
 /*--------------------MAIN-------------------*/
 int main(int argc, char *argv[]) {
     int porta_utente = 0;
+    pthread_mutex_init(&ascolto, NULL);
     
     if (argc != 2) {
         printf("L'eseguibile richiedela porta.\n");
@@ -227,9 +206,9 @@ int main(int argc, char *argv[]) {
     printf("Connessione alla lavagna avvenuta con successo.\n");
     
     /*Creazione thread per ascoltare dati in arrivo */
-    // pthread_t thread_ascolto;
-    // pthread_create(&thread_ascolto, NULL, gestione_ascolto, (void *)(intptr_t)sd);
-    // pthread_detach(thread_ascolto);
+    pthread_t thread_ascolto;
+    pthread_create(&thread_ascolto, NULL, gestione_ascolto, (void *)(intptr_t)sd);
+    pthread_detach(thread_ascolto);
 
     /* Controllo che i comandi inseriti da tastiera siano quelli permessi.*/
     char comando[20];
@@ -250,9 +229,10 @@ int main(int argc, char *argv[]) {
                     hello_function(sd, porta_utente);
                 }
                 if(strcmp(comando,"QUIT")== 0) {
-                    quit_function(sd, porta_utente);
-                    close(sd);
-                    return EXIT_SUCCESS;
+                    if (quit_function(sd, porta_utente) == 0) {
+                        close(sd);
+                        return EXIT_SUCCESS;
+                    }
                 }
                 if(strcmp(comando, "CREATE_CARD") == 0) {
                     create_card_function(sd, porta_utente);
@@ -261,6 +241,7 @@ int main(int argc, char *argv[]) {
                     request_user_list_function(sd, porta_utente);
                 }
 
+                sleep(1);
                 printf(RIGA_SEPARATORIA);
                 break;
             }

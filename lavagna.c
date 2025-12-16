@@ -105,7 +105,7 @@ int create_card(const char* comando, int porta_utente){
     new_card.colonna = colonna;
     strncpy(new_card.testo, testo, sizeof(new_card.testo));
     new_card.testo[sizeof(new_card.testo) - 1] = '\0';
-    new_card.porta_utente = porta_utente;
+    new_card.porta_utente = 0;
     new_card.timestamp_ultima_modifica = time(NULL);    
 
     /* Aggiunta della card alla colonna corrispondente */
@@ -363,14 +363,7 @@ void* gestione_utente(void* arg){
         /*Comando QUIT*/
         if (strncmp(buffer, "QUIT:", 5) == 0) {
             printf("Utente sulla porta %d disconnesso.\n", porta_utente);
-            if(rimozione_utente(porta_utente) != 0){
-                const char *risposta = "Errore nella disconnessione.";
-                send_message(sd_utente, risposta);
-                continue;
-            }
-
-            const char *risposta = "Connessione terminata.";
-            send_message(sd_utente, risposta);
+            rimozione_utente(porta_utente);
             close(sd_utente);
             break;
         }
@@ -420,6 +413,13 @@ void* gestione_utente(void* arg){
 }
 
 
+/*Funzione per l'attribuzione di card agli utenti connessi*/
+void handle_card(){
+    
+
+
+    return;
+}
 
 
 /*Funzione per la creazione della lavagna e inizializzazione*/
@@ -456,9 +456,14 @@ void* gestione_lavagna(void* arg){
 
         if(strcmp(comando, "SHOW_LAVAGNA") == 0){
             show_lavagna();
-        } else {
-            printf("Comando non riconosciuto.\n");
+            continue;
+        } 
+        
+        if(strcmp(comando, "HANDLE_CARD") == 0) {
+            handle_card();
+            continue;
         }
+        printf("Comando non riconosciuto.\n");
     }
 
     return NULL;

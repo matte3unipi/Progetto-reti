@@ -36,9 +36,9 @@ int recv_message(int sd, char *buffer, int max_len) {
     }
     
     int bytes_letti = recv(sd, buffer, msg_len, 0);
-    if (bytes_letti <= 0) 
+    if (bytes_letti != msg_len) {
         return -1;
-    
+    }
     buffer[bytes_letti] = '\0';
     return bytes_letti;
 }
