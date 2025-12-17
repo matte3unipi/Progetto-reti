@@ -15,20 +15,23 @@
 #define RIGA_SEPARATORIA "<----------------------------------------\n"
 
 /*Dati utili per il codice*/
-const char *comandi_validi[] = {
-    "HELLO", "QUIT", "CREATE_CARD", 
-    "REQUEST_USER_LIST", "REVIEW_CARD", "CARD_DONE",
-    "SHOW_LAVAGNA"
-};
-const int num_comandi = 7;
 int hello_eseguito = 0;
-int lista_utenti [100];
-pthread_mutex_t ascolto = PTHREAD_MUTEX_INITIALIZER;
+int porta_utente = 0;
+pthread_mutex_t ascolto;
+
+struct CARD_ASSEGNATA {
+    int id;
+    char testo[256];
+    int porte_utenti[100];
+    int num_utenti;
+    int review_ricevute;
+};
+struct CARD_ASSEGNATA card_assegnata;
 
 
 
 /*Funzione per gestire il comando HELLO */
-void hello_function(int sd, int porta_utente) {
+void hello_function(int sd) {
     if(hello_eseguito) {
         printf("Comando HELLO già eseguito in questa sessione.\n");
         return;
@@ -48,7 +51,7 @@ void hello_function(int sd, int porta_utente) {
 }
 
 /*Funzione per gestire il comando QUIT */
-int quit_function(int sd, int porta_utente) {
+int quit_function(int sd) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
         return -1;
@@ -71,7 +74,7 @@ int quit_function(int sd, int porta_utente) {
 
 
 /*Funzione per gestire il comando CREATE_CARD */
-void create_card_function(int sd, int porta_utente) {
+void create_card_function(int sd) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
         return;
@@ -105,7 +108,7 @@ void create_card_function(int sd, int porta_utente) {
 }
 
 /*Funzione per gestire il comando REQUEST_USER_LIST */
-void request_user_list_function(int sd, int porta_utente) {
+void request_user_list_function(int sd) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
         return;
@@ -123,10 +126,71 @@ void request_user_list_function(int sd, int porta_utente) {
 }
 
 
+/*Funzione per salvare la lista delle porte utenti ricevuta*/
+void save_user_list(const char* msg) {
+    printf("Ricevuta lista utenti dalla lavagna.\n");
+
+    char lista_copia[1024];
+    strncpy(lista_copia, msg, sizeof(lista_copia));
+    lista_copia[sizeof(lista_copia) - 1] = '\0';    
+    char *token = strtok(lista_copia, ":");
+    card_assegnata.num_utenti = atoi(token);
+    card_assegnata.review_ricevute = 0;
+    for(int i = 0; i < card_assegnata.num_utenti; i++) {
+        token = strtok(NULL, ":");
+        card_assegnata.porte_utenti[i] = atoi(token);
+    }
+    printf("Lista utenti salvata\n");
+    return;
+}
+
+/*Funzione per gestire l'arrivo di una card*/
+void handle_card_function(const char* msg) {
+    /* Copio il messaggio per lavorare*/
+    char testo_card[1024];
+    strncpy(testo_card, msg, sizeof(testo_card) - 1);
+    testo_card[sizeof(testo_card) - 1] = '\0';
+
+    char* token = strtok(testo_card, ":");
+    card_assegnata.id = atoi(token);
+    token = strtok(NULL, ":");
+    strncpy(card_assegnata.testo, token, sizeof(card_assegnata.testo) - 1);
+    card_assegnata.testo[sizeof(card_assegnata.testo) - 1] = '\0';
+    token = strtok(NULL, ":");
+    card_assegnata.num_utenti = atoi(token);
+    card_assegnata.review_ricevute = 0;
+    for(int i = 0; i < card_assegnata.num_utenti; i++) {
+        token = strtok(NULL, ":");
+        card_assegnata.porte_utenti[i] = atoi(token);
+    }
+    printf("\nNuova card assegnata:\n");
+    printf("ID: %d\n", card_assegnata.id);
+    printf("Testo: %s\n", card_assegnata.testo);
+    return;
+}
+
+/*Funzione per gestire il comando ACK_CARD */
+void ack_card_function(int sd) {
+    if(!hello_eseguito) {
+        printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
+        return;
+    }
+
+    char msg[50];
+    sprintf(msg, "ACK_CARD:%d", card_assegnata.id);
+    if(send_message(sd, msg) < 0) {
+        perror("Errore durante l'invio del messaggio ACK_CARD");
+        exit(EXIT_FAILURE);
+    } else {
+        printf("Comando ACK_CARD eseguito per la card ID %d.\n", card_assegnata.id);
+    }
+}
+
+
 /*Funzione per gestire i messaggi in arrivo dalla lavagna*/
 void* gestione_ascolto(void* arg) {
     int sd = (int)(intptr_t)arg;
-    char buffer[256];
+    char buffer[1024];
     
     while(1) {
         if(recv_message(sd, buffer, sizeof(buffer) - 1) <= 0) {
@@ -140,20 +204,12 @@ void* gestione_ascolto(void* arg) {
         }
         /* Lista utenti ricevuta */
         else if (strncmp(buffer, "SEND_USER_LIST:", 15) == 0) {
-            /* Salvo la lista per comandi futuri */
-            char copia[256];
-            strncpy(copia, buffer, sizeof(copia) - 1);
-            char *token = strtok(copia, ":");
-            strtok(NULL, ":"); 
-            int num_utenti = 0;
-            while((token = strtok(NULL, ":")) != NULL) {
-                lista_utenti[num_utenti++] = atoi(token);
-            }
+            save_user_list(buffer + 15);
         }
-        else if(strncmp(buffer,"HANDLER_CARD:",13)==0){
-            handler_card_function(buffer + 13);
+        /* Nuova card assegnata */
+        else if(strncmp(buffer,"HANDLE_CARD:",12)==0){
+            handle_card_function(buffer + 12);
         }
-        
         /* Messaggi generici */
         printf("\n[LAVAGNA] %s\n", buffer);
 
@@ -166,7 +222,6 @@ void* gestione_ascolto(void* arg) {
 
 /*--------------------MAIN-------------------*/
 int main(int argc, char *argv[]) {
-    int porta_utente = 0;
     pthread_mutex_init(&ascolto, NULL);
     
     if (argc != 2) {
@@ -217,41 +272,35 @@ int main(int argc, char *argv[]) {
         printf("Inserisci il comando\n");
         scanf("%s", comando);
 
-        int comando_valido = 0;
-        for (int i = 0; i < num_comandi; i++) {
-            if (strcmp(comando, comandi_validi[i]) == 0) {
-                comando_valido = 1;
+       printf(RIGA_SEPARATORIA);
 
-                printf(RIGA_SEPARATORIA);
+       // Invia il comando alla lavagna
+       if(strcmp(comando, "HELLO") == 0) {
+           hello_function(sd);
+       }
+       else if(strcmp(comando,"QUIT")== 0) {
+           if (quit_function(sd) == 0) {
+               close(sd);
+               return EXIT_SUCCESS;
+           }
+       }
+       else if(strcmp(comando, "CREATE_CARD") == 0) {
+           create_card_function(sd);
+       }
+       else if(strcmp(comando, "REQUEST_USER_LIST") == 0) {
+           request_user_list_function(sd);
+       }
+       else if(strcmp(comando, "ACK_CARD") == 0) {
+           ack_card_function(sd);
+       }
+       else {
+           printf("Comando non riconosciuto.\n");
+       }
 
-                // Invia il comando alla lavagna
-                if(strcmp(comando, "HELLO") == 0) {
-                    hello_function(sd, porta_utente);
-                }
-                if(strcmp(comando,"QUIT")== 0) {
-                    if (quit_function(sd, porta_utente) == 0) {
-                        close(sd);
-                        return EXIT_SUCCESS;
-                    }
-                }
-                if(strcmp(comando, "CREATE_CARD") == 0) {
-                    create_card_function(sd, porta_utente);
-                }
-                if(strcmp(comando, "REQUEST_USER_LIST") == 0) {
-                    request_user_list_function(sd, porta_utente);
-                }
-
-                sleep(1);
-                printf(RIGA_SEPARATORIA);
-                break;
-            }
-        }
-        if (!comando_valido) {
-            printf("Comando non permesso.\n");
-            continue;
-        }
+       sleep(1);
+       printf(RIGA_SEPARATORIA);
     }
-    
+
     close(sd);
     return EXIT_SUCCESS;
 }

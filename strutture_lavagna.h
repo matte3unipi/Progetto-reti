@@ -4,6 +4,9 @@
 #define MIN_UTENTI 4
 #define RIGA_SEPARATORIA "----------------------------------------\n"
 
+#define MAX_CLIENTS 100
+
+/*Strutture*/
 typedef enum {
     TO_DO = 0,
     DOING = 1,
@@ -32,4 +35,14 @@ struct st_LAVAGNA {
     int numero_card_totali;
 };
 
+struct SOCKET_UTENTE {
+    int socket_id;
+    int occupato;
+};
+
 struct st_LAVAGNA* lavagna = NULL;
+struct SOCKET_UTENTE id_socket_x_lavagna [MAX_CLIENTS];
+
+/*Semafori*/
+pthread_mutex_t accesso_lavagna;
+pthread_mutex_t accesso_lista_socket;

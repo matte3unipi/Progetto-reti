@@ -12,10 +12,12 @@
 #include "funzioni_x_msg.h"
 
 
-int registrazione_utente(int porta_utente){
+int registrazione_utente(int porta_utente, int sd_utente){
+    pthread_mutex_lock(&accesso_lavagna);
     /* Controllo se la porta è già registrata */
     for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
         if(lavagna->porta_utenti_connessi[i] == porta_utente){
+            pthread_mutex_unlock(&accesso_lavagna);
             return -1;
         }
     }
@@ -27,25 +29,38 @@ int registrazione_utente(int porta_utente){
 
     if(lavagna->porta_utenti_connessi == NULL){
         perror("Errore nella registrazione dell'utente");
+        pthread_mutex_unlock(&accesso_lavagna);
         exit(EXIT_FAILURE);
     }
 
     /*Salvo la porta dell'utente in coda*/
     lavagna->porta_utenti_connessi[lavagna->numero_utenti_connessi - 1] = porta_utente;
 
+    /*Salvo il socket dell'utente*/
+    id_socket_x_lavagna[lavagna->numero_utenti_connessi - 1].socket_id = sd_utente;
+    id_socket_x_lavagna[lavagna->numero_utenti_connessi - 1].occupato = 0;
+
+    pthread_mutex_unlock(&accesso_lavagna);
     return 0;
 }
 
 int rimozione_utente(int porta_utente){
     int trovato = 0;
 
+    pthread_mutex_lock(&accesso_lavagna);
+    
     /*Cerco l'utente e lo rimuovo dalla lista*/
     for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
         if(lavagna->porta_utenti_connessi[i] == porta_utente) {
             trovato = 1;
+
+            /*Rimuovo la porta e il socket associato*/
+            id_socket_x_lavagna[i].socket_id = 0;
+            id_socket_x_lavagna[i].occupato = 0;
         }
         if(trovato && i < lavagna->numero_utenti_connessi - 1) {
             lavagna->porta_utenti_connessi[i] = lavagna->porta_utenti_connessi[i + 1];
+            id_socket_x_lavagna[i] = id_socket_x_lavagna[i + 1];
         }
     }
 
@@ -57,14 +72,14 @@ int rimozione_utente(int porta_utente){
 
         if(lavagna->numero_utenti_connessi > 0 && lavagna->porta_utenti_connessi == NULL){
             perror("Errore nella rimozione dell'utente");
+            pthread_mutex_unlock(&accesso_lavagna);
             exit(EXIT_FAILURE);
         }
-    }
 
+    }
+    pthread_mutex_unlock(&accesso_lavagna);
     return 0;
 }
-
-
 
 
 
@@ -82,7 +97,7 @@ int controllo_stato(const char *str) {
 /*Funzione per la creazione di una nuova card*/
 int create_card(const char* comando, int porta_utente){
     /* Parsing del comando */
-    char card_copia[300];
+    char card_copia[512];
     strncpy(card_copia, comando, sizeof(card_copia));
     card_copia[sizeof(card_copia) - 1] = '\0';
 
@@ -108,6 +123,7 @@ int create_card(const char* comando, int porta_utente){
     new_card.porta_utente = 0;
     new_card.timestamp_ultima_modifica = time(NULL);    
 
+    pthread_mutex_lock(&accesso_lavagna);
     /* Aggiunta della card alla colonna corrispondente */
     int col_index = (int)colonna;
     lavagna->colonne[col_index].numero_card++;
@@ -120,17 +136,21 @@ int create_card(const char* comando, int porta_utente){
     lavagna->colonne[col_index].cards[lavagna->colonne[col_index].numero_card - 1] = new_card;
     lavagna->numero_card_totali++;
     
+    pthread_mutex_unlock(&accesso_lavagna);
     return 0;
 }
 
 
 /*Funzione per spostare una card da una colonna ad un'altra*/
-int move_card(int id_card, STATO_COLONNA vecchia_colonna){
+int move_card(int id_card, STATO_COLONNA vecchia_colonna, STATO_COLONNA nuova_colonna){
     /* Cerco la card nella lavagna */
     int vecchia_col_id = (int)vecchia_colonna;
+    int nuova_col_id = (int)nuova_colonna;
     int trovata = 0;
     struct st_CARD card_select;
     int posizione_card = -1;
+
+    pthread_mutex_lock(&accesso_lavagna);
 
     for(int i = 0; i < lavagna->colonne[vecchia_col_id].numero_card; i++){
         if(lavagna->colonne[vecchia_col_id].cards[i].id == id_card){
@@ -159,59 +179,71 @@ int move_card(int id_card, STATO_COLONNA vecchia_colonna){
     }
 
     /* Aggiungo la card alla nuova colonna */
-    int nuova_col_id = (int)(vecchia_colonna + 1);
     lavagna->colonne[nuova_col_id].numero_card++;
     lavagna->colonne[nuova_col_id].cards = realloc(lavagna->colonne[nuova_col_id].cards, 
         lavagna->colonne[nuova_col_id].numero_card * sizeof(struct st_CARD));
-        if(lavagna->colonne[nuova_col_id].cards == NULL){
+    if(lavagna->colonne[nuova_col_id].cards == NULL){
         perror("Errore nello spostamento della card");
         exit(EXIT_FAILURE);
     }
     lavagna->colonne[nuova_col_id].cards[lavagna->colonne[nuova_col_id].numero_card - 1] = card_select;      
 
+    pthread_mutex_unlock(&accesso_lavagna);
     return 0;
 }
 
 
 /*Funzione per spostare una card da TO_DO a DOING in seguito ad un ack*/
-int ack_card(const char* buffer){
+int ack_card(const char* buffer, int porta_utente){
     /*Estraggo l'id e la colonna della card in questione*/
-    char ack_copia[256];
+    char ack_copia[64];
     strncpy(ack_copia, buffer, sizeof(ack_copia));
     ack_copia[sizeof(ack_copia) - 1] = '\0';
+
     char *token = strtok(ack_copia, ":");
     token = strtok(NULL, ":");
     int id_card = atoi(token);
-    token = strtok(NULL, ":");
-    STATO_COLONNA vecchia_colonna = controllo_stato(token);
 
-    /*Controllo che sia TO_DO*/
-    if(vecchia_colonna != TO_DO){
-        return -1;
+    pthread_mutex_lock(&accesso_lavagna);
+    // Trova la card in TO_DO e salva la porta
+    for(int i = 0; i < lavagna->colonne[TO_DO].numero_card; i++){
+        if(lavagna->colonne[TO_DO].cards[i].id == id_card){
+            lavagna->colonne[TO_DO].cards[i].porta_utente = porta_utente;
+            lavagna->colonne[TO_DO].cards[i].timestamp_ultima_modifica = time(NULL);
+            break;
+        }
     }
-    if(move_card(id_card, vecchia_colonna) != 0){
+    pthread_mutex_unlock(&accesso_lavagna);
+
+    if(move_card(id_card, TO_DO, DOING) != 0){
         return -1;
     }
     return 0;
 }
 
 /*Funzione per spostare una card da DOING a DONE in seguito ad un ack*/
-int card_done(const char* buffer){
+int card_done(const char* buffer, int porta_utente){
     /*Estraggo l'id e la colonna della card in questione*/
-    char ack_copia[256];
+    char ack_copia[64];
     strncpy(ack_copia, buffer, sizeof(ack_copia));
     ack_copia[sizeof(ack_copia) - 1] = '\0';
+
     char *token = strtok(ack_copia, ":");
     token = strtok(NULL, ":");
     int id_card = atoi(token);
-    token = strtok(NULL, ":");
-    STATO_COLONNA vecchia_colonna = controllo_stato(token);
 
-    /*Controllo che sia DOING*/
-    if(vecchia_colonna != DOING){
-        return -1;
+    pthread_mutex_lock(&accesso_lavagna);
+    // Trova la card in DOING e salva la porta
+    for(int i = 0; i < lavagna->colonne[DOING].numero_card; i++){
+        if(lavagna->colonne[DOING].cards[i].id == id_card){
+            lavagna->colonne[DOING].cards[i].porta_utente = porta_utente;
+            lavagna->colonne[DOING].cards[i].timestamp_ultima_modifica = time(NULL);
+            break;
+        }
     }
-    if(move_card(id_card, vecchia_colonna) != 0){
+    pthread_mutex_unlock(&accesso_lavagna);
+
+    if(move_card(id_card, DOING, DONE) != 0){
         return -1;
     }
     return 0;
@@ -220,8 +252,18 @@ int card_done(const char* buffer){
 
 /*Funzione per inviare la lista delle porte salvate*/
 int send_user_list(int sd){
-    char lista[256];
+    char lista[1024];
     strcpy(lista, "SEND_USER_LIST:");
+
+    pthread_mutex_lock(&accesso_lavagna);
+
+    /*Inserisco numero utenti*/
+    char num_utenti_str[10];
+    sprintf(num_utenti_str, "%d", lavagna->numero_utenti_connessi);
+    strcat(lista, num_utenti_str);
+    strcat(lista, ":");
+
+    /*Inserisco lista porte utenti*/
     for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
         char porta_str[10];
         sprintf(porta_str, "%d", lavagna->porta_utenti_connessi[i]);
@@ -230,7 +272,7 @@ int send_user_list(int sd){
             strcat(lista, ":");
         }
     }
-
+    pthread_mutex_unlock(&accesso_lavagna);
     if(send_message(sd, lista) < 0){
         perror("Errore nell'invio della lista utenti");
         return -1;
@@ -248,6 +290,7 @@ int show_lavagna(){
     printf("|        TO DO       |        DOING       |        DONE        |\n");
     printf("----------------------------------------------------------------\n");
     
+    pthread_mutex_lock(&accesso_lavagna);
     int max_cards = 0;
     for(int i = 0; i < NUM_COLONNE; i++){
         if(lavagna->colonne[i].numero_card > max_cards){
@@ -307,6 +350,7 @@ int show_lavagna(){
         }
         printf("----------------------------------------------------------------\n");
     }
+    pthread_mutex_unlock(&accesso_lavagna);
     return 0;
 }
 
@@ -315,7 +359,7 @@ int show_lavagna(){
 /*Funzione per la gestione di un utente connesso*/
 void* gestione_utente(void* arg){
     int sd_utente = (int)(intptr_t)arg;
-    char buffer[256];
+    char buffer[1024];
     int porta_utente = 0;
 
     /*Arrivo comandi da parte dell'utente*/
@@ -335,7 +379,7 @@ void* gestione_utente(void* arg){
         if (strncmp(buffer, "HELLO:", 6) == 0) {
             porta_utente = atoi(&buffer[6]);
 
-            if (registrazione_utente(porta_utente) != 0) {
+            if (registrazione_utente(porta_utente, sd_utente) != 0) {
                 const char *risposta = "Porta già registrata.";
                 send_message(sd_utente, risposta);
                 continue;
@@ -385,7 +429,7 @@ void* gestione_utente(void* arg){
         /*Comando ACK_CARD*/
         if(strncmp(buffer, "ACK_CARD:", 9) == 0){
             printf("Comando ACK_CARD ricevuto dalla porta %d.\n", porta_utente);
-            if(ack_card(buffer) != 0){
+            if(ack_card(buffer, porta_utente) != 0){
                 const char *risposta = "Errore nell'ack della card.";
                 send_message(sd_utente, risposta);
                 continue;
@@ -413,17 +457,58 @@ void* gestione_utente(void* arg){
 }
 
 
-/*Funzione per l'attribuzione di card agli utenti connessi*/
+/*Funzione per l'attribuzione di card agli utenti connessi */
 void handle_card(){
-    
+    pthread_mutex_lock(&accesso_lavagna);
 
+    int colonna_to_do = (int)TO_DO;
 
+    for(int i = 0; i < lavagna->colonne[colonna_to_do].numero_card; i++){
+
+        struct st_CARD card_selezionata = lavagna->colonne[colonna_to_do].cards[i];
+
+        /* Assegno la card al primo utente disponibile (occupato = 0) */
+        for(int j = 0; j < lavagna->numero_utenti_connessi; j++){
+
+            if(id_socket_x_lavagna[j].occupato == 0){
+                /* Costruisco il messaggio con lista utenti (escluso destinatario) */
+                char msg[1024];
+                char *pos = msg;
+                int num_utenti_escl = lavagna->numero_utenti_connessi - 1;
+                
+                /* Inizio messaggio con ID, testo e numero utenti */
+                pos += sprintf(pos, "HANDLE_CARD:%d:%s:%d", 
+                    card_selezionata.id, card_selezionata.testo, num_utenti_escl);
+                
+                /* Aggiungo lista porte (escludendo il destinatario alla posizione j) */
+                for(int k = 0; k < lavagna->numero_utenti_connessi; k++){
+                    if(k != j){
+                        pos += sprintf(pos, ":%d", lavagna->porta_utenti_connessi[k]);
+                    }
+                }
+                
+                /* Invio la card all'utente */
+                if(send_message(id_socket_x_lavagna[j].socket_id, msg) < 0){
+                    perror("Errore nell'invio della card all'utente");
+                }
+
+                /* Segno l'utente come occupato */
+                id_socket_x_lavagna[j].occupato = 1;
+                break;
+            }
+        }
+    }
+
+    printf("Card inviate, attesa ACK da parte degli utenti.\n");
+
+    pthread_mutex_unlock(&accesso_lavagna);
     return;
 }
 
 
 /*Funzione per la creazione della lavagna e inizializzazione*/
 void creazione_lavagna(){
+    pthread_mutex_init(&accesso_lavagna, NULL);
     lavagna = malloc(sizeof(struct st_LAVAGNA));
 
     if(lavagna == NULL){
