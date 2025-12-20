@@ -36,8 +36,10 @@ struct st_LAVAGNA {
 };
 
 struct SOCKET_UTENTE {
+    int porta_utente;
     int socket_id;
     int occupato;
+    int pong_ricevuto;
 };
 
 struct st_LAVAGNA* lavagna = NULL;
