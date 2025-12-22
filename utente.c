@@ -25,6 +25,7 @@ struct CARD_ASSEGNATA {
     int porte_utenti[100];
     int num_utenti;
     int review_ricevute;
+    int card_done_inviata;
 };
 struct CARD_ASSEGNATA card_assegnata;
 
@@ -159,6 +160,8 @@ void handle_card_function(const char* msg) {
     token = strtok(NULL, ":");
     card_assegnata.num_utenti = atoi(token);
     card_assegnata.review_ricevute = 0;
+    card_assegnata.card_done_inviata = 0;
+
     for(int i = 0; i < card_assegnata.num_utenti; i++) {
         token = strtok(NULL, ":");
         card_assegnata.porte_utenti[i] = atoi(token);
@@ -184,6 +187,36 @@ void ack_card_function(int sd) {
     } else {
         printf("Comando ACK_CARD eseguito per la card ID %d.\n", card_assegnata.id);
     }
+}
+
+/*Funzione per gestire il comando CARD_DONE */
+void card_done_function(int sd) {
+    if(!hello_eseguito) {
+        printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
+        return;
+    }
+
+    if(card_assegnata.card_done_inviata == 1) {
+        printf("Hai già inviato il comando CARD_DONE per questa card.\n");
+        return;
+    }
+
+    if(card_assegnata.num_utenti != card_assegnata.review_ricevute){
+        printf("Non puoi completare la card, non tutte le review sono state ricevute.\n");
+        return;
+    }
+
+    char msg[50];
+    sprintf(msg, "CARD_DONE:%d", card_assegnata.id);
+    if(send_message(sd, msg) < 0) {
+        perror("Errore durante l'invio del messaggio CARD_DONE");
+        exit(EXIT_FAILURE);
+    } else {
+        printf("Comando CARD_DONE eseguito per la card ID %d.\n", card_assegnata.id);
+        card_assegnata.card_done_inviata = 1;
+    }
+
+    return;
 }
 
 
@@ -260,12 +293,12 @@ void review_card_function(int sd) {
         pthread_detach(p2p_socket);
     }
 
-    sleep(8*card_assegnata.num_utenti);
+    sleep(4);
 
-    if(card_assegnata.review_ricevute == card_assegnata.num_utenti) {
+    if(card_assegnata.review_ricevute == (card_assegnata.num_utenti - 1)) {
         printf("REVIEW_CARD ricevute.\n");
     } else {
-        printf("Errore: non tutte le review sono state ricevute.\n");
+        printf("Non tutte le review sono state ricevute.\n");
     }
 }
 
@@ -452,6 +485,9 @@ int main(int argc, char *argv[]) {
        }
        else if(strcmp(comando,"REVIEW_CARD") == 0){
             review_card_function(sd);
+       }
+       else if(strcmp(comando, "CARD_DONE") == 0) {
+            card_done_function(sd);
        }
        else {
            printf("Comando non riconosciuto.\n");

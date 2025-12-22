@@ -20,7 +20,7 @@ int move_card(int id_card, STATO_COLONNA vecchia_colonna, STATO_COLONNA nuova_co
 int ack_card(const char* buffer, int porta_utente);
 int card_done(const char* buffer, int porta_utente);
 void card_doing_check(int porta_utente);
-int send_user_list(int sd);
+int send_user_list(int sd, int porta_destinatario);
 int show_lavagna();
 void handle_card();
 void creazione_lavagna();
@@ -122,6 +122,8 @@ void* ping_user(void* arg){
     char msg[] = "PING";
     if(send_message(socket_utente, msg) < 0){
         perror("Errore nell'invio del ping all'utente");
+        rimozione_utente(porta_utente);
+        close(socket_utente);
         return NULL;
     }
 
@@ -141,7 +143,6 @@ void* ping_user(void* arg){
             } else {
                 /* Resetto il flag per il prossimo ping */
                 id_socket_x_lavagna[i].pong_ricevuto = 0;
-                printf("Pong ricevuto dall'utente sulla porta %d.\n", porta_utente);
             }
             break;
         }
@@ -153,7 +154,7 @@ void* ping_user(void* arg){
 /*Funzione per il ping degli utenti connessi*/
 void* handler_ping_users(void* arg){
     while(1){
-        sleep(20);
+        sleep(35);
 
         pthread_mutex_lock(&accesso_lavagna);
         time_t tempo_corrente = time(NULL);
@@ -162,6 +163,7 @@ void* handler_ping_users(void* arg){
             struct st_CARD *card = &lavagna->colonne[DOING].cards[i];
 
             if(tempo_corrente - card->timestamp_ultima_modifica > 90){
+                card->timestamp_ultima_modifica = tempo_corrente;
                 pthread_t thread_ping;
                 pthread_create(&thread_ping, NULL, ping_user, (void*)(intptr_t)card->porta_utente);
                 pthread_detach(thread_ping);
@@ -359,19 +361,22 @@ int card_done(const char* buffer, int porta_utente){
 
 
 /*Funzione per inviare la lista delle porte salvate*/
-int send_user_list(int sd){
+int send_user_list(int sd, int porta_destinatario){
     char lista[1024];
     strcpy(lista, "SEND_USER_LIST:");
 
 
-    /*Inserisco numero utenti*/
+    /*Inserisco numero utenti (meno 1 del destinatario)*/
     char num_utenti_str[10];
-    sprintf(num_utenti_str, "%d", lavagna->numero_utenti_connessi);
+    sprintf(num_utenti_str, "%d", lavagna->numero_utenti_connessi - 1);
     strcat(lista, num_utenti_str);
     strcat(lista, ":");
 
-    /*Inserisco lista porte utenti*/
+    /*Inserisco lista porte utenti (escludendo la porta del destinatario)*/
     for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
+        if(lavagna->porta_utenti_connessi[i] == porta_destinatario){
+            continue;
+        }
         char porta_str[10];
         sprintf(porta_str, "%d", lavagna->porta_utenti_connessi[i]);
         strcat(lista, porta_str);
@@ -382,6 +387,8 @@ int send_user_list(int sd){
 
     if(send_message(sd, lista) < 0){
         perror("Errore nell'invio della lista utenti");
+        rimozione_utente(porta_destinatario);
+        close(sd);
         return -1;
     }
 
@@ -473,6 +480,7 @@ void* gestione_utente(void* arg){
         /*Ricezione messaggio*/
         if(recv_message(sd_utente, buffer, sizeof(buffer)) < 0) {
             printf("Connessione utente sulla porta %d chiusa.\n", sd_utente);
+            rimozione_utente(porta_utente);
             close(sd_utente);
             return NULL;
         }
@@ -564,7 +572,7 @@ void* gestione_utente(void* arg){
         /*Comando REQUEST_USER_LIST*/
         if (strcmp(buffer, "REQUEST_USER_LIST") == 0) {
             pthread_mutex_lock(&accesso_lavagna);
-            if(send_user_list(sd_utente) != 0){
+            if(send_user_list(sd_utente, porta_utente) != 0){
                 const char *risposta = "Errore nell'invio della lista utenti.";
                 send_message(sd_utente, risposta);
             }
@@ -576,7 +584,7 @@ void* gestione_utente(void* arg){
             continue;
         }
 
-        /*CONTROLLARE*/
+        /*Comando CARD_DONE*/
         if(strncmp(buffer, "CARD_DONE:",10) == 0){
             printf("Comando CARD_DONE ricevuto dalla porta %d.\n", porta_utente);
             pthread_mutex_lock(&accesso_lavagna);
@@ -739,10 +747,19 @@ int main(){
     memset(&lavagna_addr, 0, sizeof(lavagna_addr));
     lavagna_addr.sin_family = AF_INET;
     lavagna_addr.sin_port = htons(PORTA_LAVAGNA);
-    inet_pton(AF_INET, "127.0.0.1", &lavagna_addr.sin_addr);
+    if(inet_pton(AF_INET, "127.0.0.1", &lavagna_addr.sin_addr) <= 0) {
+        perror("Errore nella conversione dell'indirizzo IP");
+        close(sd);
+        exit(EXIT_FAILURE);
+    }
 
-    /* Binding della socket */
-    bind(sd, (struct sockaddr *)&lavagna_addr, sizeof(lavagna_addr));
+    /* Binding del socket */
+    if(bind(sd, (struct sockaddr *)&lavagna_addr, sizeof(lavagna_addr)) < 0) {
+        perror("Errore nel binding della socket");
+        close(sd);
+        exit(EXIT_FAILURE);
+    }
+    /* Messa in ascolto della socket */
     listen(sd, MIN_UTENTI);
 
     /*Creazione thread ascolto comandi lavagna*/
