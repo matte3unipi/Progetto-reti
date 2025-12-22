@@ -187,7 +187,151 @@ void ack_card_function(int sd) {
 }
 
 
-/*Funzione per gestire i messaggi in arrivo dalla lavagna*/
+/*Thread per socket p2p*/
+void* gestione_p2p_review(void* arg) {
+    int porta_destinatario = (int)(intptr_t)arg;
+
+    /* Creazione socket */
+    int sd_p2p;
+    struct sockaddr_in addr_destinatario;
+
+    sd_p2p = socket(AF_INET, SOCK_STREAM, 0);
+    if (sd_p2p < 0) {
+        perror("Errore nella creazione della socket P2P");
+        return NULL;
+    }
+
+    /* Creazione indirizzo pear destinatario */
+    memset(&addr_destinatario, 0, sizeof(addr_destinatario));
+    addr_destinatario.sin_family = AF_INET;
+    addr_destinatario.sin_port = htons(porta_destinatario);
+    if(inet_pton(AF_INET, "127.0.0.1", &addr_destinatario.sin_addr) <= 0) {
+        perror("Errore nella conversione dell'indirizzo IP P2P");
+        close(sd_p2p);
+        return NULL;
+    }
+    /* Connessione al destinatario */
+    if(connect(sd_p2p, (struct sockaddr *)&addr_destinatario, sizeof(addr_destinatario)) < 0) {
+        perror("Errore nella connessione P2P");
+        close(sd_p2p);
+        return NULL;
+    }
+    /* Invio della review */
+    char review_msg[64];
+    sprintf(review_msg, "REVIEW_CARD:%d", card_assegnata.id);
+    if(send_message(sd_p2p, review_msg) < 0) {
+        perror("Errore nell'invio della REVIEW_CARD");
+        close(sd_p2p);
+        return NULL;
+    }
+    printf("REVIEW_CARD inviata alla porta %d.\n", porta_destinatario);
+
+    /* Attendo la risposta */
+    char ack[20];
+    if(recv_message(sd_p2p, ack, sizeof(ack) - 1) <= 0) {
+        perror("Errore nella ricezione dell'ACK della REVIEW_CARD");
+        close(sd_p2p);
+        return NULL;
+    }
+    if(strncmp(ack, "ACK_REVIEW_CARD", 15) == 0) {
+        pthread_mutex_lock(&ascolto);
+        card_assegnata.review_ricevute++;
+        pthread_mutex_unlock(&ascolto);
+        printf("ACK_REVIEW_CARD ricevuto dalla porta %d.\n", porta_destinatario);
+    }
+    close(sd_p2p);
+    return NULL;
+}
+
+/*Funzione per gestire il comando REVIEW_CARD */
+void review_card_function(int sd) {
+    if(!hello_eseguito) {
+        printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
+        return;
+    }
+
+    card_assegnata.review_ricevute = 0;
+
+    for(int i = 0; i < card_assegnata.num_utenti; i++) {
+        int porta_destinatario = card_assegnata.porte_utenti[i];
+
+        pthread_t p2p_socket;
+        pthread_create(&p2p_socket, NULL, gestione_p2p_review, (void *)(intptr_t)porta_destinatario);
+        pthread_detach(p2p_socket);
+    }
+
+    sleep(8*card_assegnata.num_utenti);
+
+    if(card_assegnata.review_ricevute == card_assegnata.num_utenti) {
+        printf("REVIEW_CARD ricevute.\n");
+    } else {
+        printf("Errore: non tutte le review sono state ricevute.\n");
+    }
+}
+
+/* Thread server P2P per ricevere REVIEW_CARD */
+void* server_p2p(void* arg) {
+    int porta_utente = (int)(intptr_t)arg;
+
+    int sd_server, sd_client;
+    struct sockaddr_in addr_server, addr_client;
+    socklen_t len_client = sizeof(addr_client);
+
+    /* Creazione socket server */
+    sd_server = socket(AF_INET, SOCK_STREAM, 0);
+    if(sd_server < 0) {
+        perror("Errore nella creazione socket server P2P");
+        return NULL;
+    }
+
+    /* Creazione indirizzo server P2P */
+    memset(&addr_server, 0, sizeof(addr_server));
+    addr_server.sin_family = AF_INET;
+    addr_server.sin_port = htons(porta_utente);
+    if(inet_pton(AF_INET, "127.0.0.1", &addr_server.sin_addr) <= 0) {
+        perror("Errore nella conversione dell'indirizzo IP server P2P");
+        close(sd_server);
+        return NULL;
+    }
+
+    /* Binding del socket server P2P */
+    if(bind(sd_server, (struct sockaddr *)&addr_server, sizeof(addr_server)) < 0) {
+        perror("Errore nel bind server P2P");
+        close(sd_server);
+        return NULL;
+    }
+
+    listen(sd_server, 5);
+
+    char buffer[64];
+
+    while(1) {
+        /* Accetto connessione in arrivo */
+        if((sd_client = accept(sd_server, (struct sockaddr *)&addr_client, &len_client)) < 0) {
+            perror("Errore nell'accept P2P");
+            close(sd_server);
+            return NULL;
+        }
+
+        /* Ricevi REVIEW_CARD */
+        if(recv_message(sd_client, buffer, sizeof(buffer)) > 0) {
+            if(strncmp(buffer, "REVIEW_CARD:", 12) == 0) {
+                
+                /* Invio ACK_REVIEW_CARD */
+                char ack_msg[] = "ACK_REVIEW_CARD";
+                if(send_message(sd_client, ack_msg) < 0) {
+                    perror("Errore nell'invio dell'ACK_REVIEW_CARD");
+                }
+                close(sd_client);
+            }
+        }
+    }
+    close(sd_server);
+    return NULL;
+}
+
+
+/*Thread per gestire i messaggi in arrivo dalla lavagna*/
 void* gestione_ascolto(void* arg) {
     int sd = (int)(intptr_t)arg;
     char buffer[1024];
@@ -210,6 +354,14 @@ void* gestione_ascolto(void* arg) {
         else if(strncmp(buffer,"HANDLE_CARD:",12)==0){
             handle_card_function(buffer + 12);
         }
+        /* Risposta al ping */
+        else if(strncmp(buffer, "PING", 4) == 0){
+            char pong_msg[] = "PONG";
+            if(send_message(sd, pong_msg) < 0){
+                perror("Errore nell'invio del PONG");
+            }
+        }
+
         /* Messaggi generici */
         printf("\n[LAVAGNA] %s\n", buffer);
 
@@ -259,6 +411,11 @@ int main(int argc, char *argv[]) {
     }
 
     printf("Connessione alla lavagna avvenuta con successo.\n");
+
+    /* Server P2P per ricevere REVIEW_CARD */
+    pthread_t thread_server_p2p;
+    pthread_create(&thread_server_p2p, NULL, server_p2p, (void *)(intptr_t)porta_utente);
+    pthread_detach(thread_server_p2p);
     
     /*Creazione thread per ascoltare dati in arrivo */
     pthread_t thread_ascolto;
@@ -292,6 +449,9 @@ int main(int argc, char *argv[]) {
        }
        else if(strcmp(comando, "ACK_CARD") == 0) {
            ack_card_function(sd);
+       }
+       else if(strcmp(comando,"REVIEW_CARD") == 0){
+            review_card_function(sd);
        }
        else {
            printf("Comando non riconosciuto.\n");
