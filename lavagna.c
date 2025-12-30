@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include "strutture_lavagna.h"
-#include "funzioni_x_msg.h"
+#include "funzioni_x_msg.h"             // Per send_message e recv_message
 
 /*Definizione funzioni per le chiamate*/
 int registrazione_utente(int porta_utente, int sd_utente);
@@ -21,11 +21,18 @@ int ack_card(const char* buffer, int porta_utente);
 int card_done(const char* buffer, int porta_utente);
 void card_doing_check(int porta_utente);
 int send_user_list(int sd, int porta_destinatario);
-int show_lavagna();
 void handle_card();
+int show_lavagna();
 void creazione_lavagna();
+int send_show_lavagna(int sd_utente);
 
-/*-------Implementazione funzioni-------*/
+/*
+* ============================================================================ *
+* ============================================================================ *
+                                GESTIONE UTENTI
+* ============================================================================ *
+* ============================================================================ *
+*/
 
 /*Funzione per la registrazione di un utente*/
 int registrazione_utente(int porta_utente, int sd_utente){
@@ -58,6 +65,7 @@ int registrazione_utente(int porta_utente, int sd_utente){
 
     return 0;
 }
+
 
 /*Funzione per la rimozione di un utente in seguito alla QUIT*/
 int rimozione_utente(int porta_utente){
@@ -98,7 +106,7 @@ int rimozione_utente(int porta_utente){
     return 0;
 }
 
-
+/*Thread per eseguire il ping ad un utente*/
 void* ping_user(void* arg){
     int porta_utente = (int)(intptr_t)arg;
     int socket_utente = -1;
@@ -151,7 +159,7 @@ void* ping_user(void* arg){
     return NULL;
 }
 
-/*Funzione per il ping degli utenti connessi*/
+/*Thread per il ping degli utenti connessi*/
 void* handler_ping_users(void* arg){
     while(1){
         sleep(35);
@@ -174,6 +182,14 @@ void* handler_ping_users(void* arg){
     return NULL;
 }
 
+
+/*
+* ============================================================================ *
+* ============================================================================ *
+                                GESTIONE CARD
+* ============================================================================ *
+* ============================================================================ *
+*/
 
 /*Funzione per controllo valore colonna passato*/
 int controllo_stato(const char *str) {
@@ -369,6 +385,14 @@ int card_done(const char* buffer, int porta_utente){
 }
 
 
+/*
+* ============================================================================ *
+* ============================================================================ *
+                        GESTIONE COMUNICAZIONI CON UTENTI
+* ============================================================================ *
+* ============================================================================ *
+*/
+
 /*Funzione per inviare la lista delle porte salvate*/
 int send_user_list(int sd, int porta_destinatario){
     char lista[1024];
@@ -404,6 +428,104 @@ int send_user_list(int sd, int porta_destinatario){
     return 0;
 }
 
+
+int send_show_lavagna(int sd_utente){
+    char msg[8192];
+    int pos = 0;
+
+    /* Formato: LAVAGNA_STATE:id_lavagna|max_cards|card1_col1:card2_col1:...|card1_col2:card2_col2...| */
+
+    pos += sprintf(msg + pos, "LAVAGNA_STATE:%d|", lavagna->id);
+    
+    int max_cards = 0;
+    for(int i = 0; i < NUM_COLONNE; i++){
+        if(lavagna->colonne[i].numero_card > max_cards){
+            max_cards = lavagna->colonne[i].numero_card;
+        }
+    }
+    
+    pos += sprintf(msg + pos, "%d|", max_cards);
+    
+    for(int col = 0; col < NUM_COLONNE; col++){
+        for(int i = 0; i < max_cards; i++){
+            if(i < lavagna->colonne[col].numero_card){
+                struct st_CARD card = lavagna->colonne[col].cards[i];
+                /* Aggiungo id e testo della card */
+                pos += sprintf(msg + pos, "%d,%s", card.id, card.testo);
+            }
+            if(i < max_cards - 1){
+                pos += sprintf(msg + pos, ":");
+            }
+        }
+        if(col < NUM_COLONNE - 1){
+            pos += sprintf(msg + pos, "|");
+        }
+    }
+
+    if(send_message(sd_utente, msg) < 0){
+        perror("Errore nell'invio dello stato della lavagna");
+        return -1;
+    }
+    return 0;
+}
+
+
+
+/*Funzione per l'attribuzione di card agli utenti connessi */
+void handle_card(){
+
+    int colonna_to_do = (int)TO_DO;
+
+    for(int i = 0; i < lavagna->colonne[colonna_to_do].numero_card; i++){
+
+        struct st_CARD card_selezionata = lavagna->colonne[colonna_to_do].cards[i];
+
+        /* Assegno la card al primo utente disponibile (occupato = 0) */
+        for(int j = 0; j < lavagna->numero_utenti_connessi; j++){
+
+            if(id_socket_x_lavagna[j].occupato == 0){
+                /* Costruisco il messaggio con lista utenti (escluso destinatario) */
+                char msg[1024];
+                char *pos = msg;
+                int num_utenti_escl = lavagna->numero_utenti_connessi - 1;
+                
+                /* Inizio messaggio con ID, testo e numero utenti */
+                pos += sprintf(pos, "HANDLE_CARD:%d:%s:%d", 
+                    card_selezionata.id, card_selezionata.testo, num_utenti_escl);
+                
+                /* Aggiungo lista porte (escludendo il destinatario alla posizione j) */
+                for(int k = 0; k < lavagna->numero_utenti_connessi; k++){
+                    if(k != j){
+                        pos += sprintf(pos, ":%d", lavagna->porta_utenti_connessi[k]);
+                    }
+                }
+                
+                /* Invio la card all'utente */
+                if(send_message(id_socket_x_lavagna[j].socket_id, msg) < 0){
+                    perror("Errore nell'invio della card all'utente");
+                }
+
+                /* Segno l'utente come occupato */
+                id_socket_x_lavagna[j].occupato = 1;
+                break;
+            }
+        }
+    }
+
+    printf("Card inviate, attesa ACK da parte degli utenti.\n");
+
+    return;
+}
+
+
+/*
+* ============================================================================ *
+* ============================================================================ *
+                            GESTIONE LAVAGNA
+* ============================================================================ *
+* ============================================================================ *
+
+*/
 
 /*Funzione per la visualizzazione della lavagna*/
 int show_lavagna(){
@@ -476,46 +598,71 @@ int show_lavagna(){
     return 0;
 }
 
+/*Funzione per la creazione della lavagna e inizializzazione*/
+void creazione_lavagna(){
+    /*Inizializzazione semafori*/
+    pthread_mutex_init(&accesso_lavagna, NULL);
+    pthread_mutex_init(&accesso_lista_socket, NULL);
 
-int send_show_lavagna(int sd_utente){
-    char msg[8192];
-    int pos = 0;
+    /*Creazione lavagna*/
+    lavagna = malloc(sizeof(struct st_LAVAGNA));
 
-    /* Formato: LAVAGNA_STATE:id_lavagna|max_cards|card1_col1:card2_col1:...|card1_col2:card2_col2...| */
+    if(lavagna == NULL){
+        perror("Errore nell'allocazione della lavagna");
+        exit(EXIT_FAILURE);
+    }
 
-    pos += sprintf(msg + pos, "LAVAGNA_STATE:%d|", lavagna->id);
-    
-    int max_cards = 0;
+    lavagna->id = 1;
+    lavagna->numero_utenti_connessi = 0;
+    lavagna->numero_card_totali = 0;
+    lavagna->porta_utenti_connessi = NULL;
+
     for(int i = 0; i < NUM_COLONNE; i++){
-        if(lavagna->colonne[i].numero_card > max_cards){
-            max_cards = lavagna->colonne[i].numero_card;
-        }
-    }
-    
-    pos += sprintf(msg + pos, "%d|", max_cards);
-    
-    for(int col = 0; col < NUM_COLONNE; col++){
-        for(int i = 0; i < max_cards; i++){
-            if(i < lavagna->colonne[col].numero_card){
-                struct st_CARD card = lavagna->colonne[col].cards[i];
-                /* Aggiungo id e testo della card */
-                pos += sprintf(msg + pos, "%d,%s", card.id, card.testo);
-            }
-            if(i < max_cards - 1){
-                pos += sprintf(msg + pos, ":");
-            }
-        }
-        if(col < NUM_COLONNE - 1){
-            pos += sprintf(msg + pos, "|");
-        }
+        lavagna->colonne[i].stato = (STATO_COLONNA)i;
+        lavagna->colonne[i].numero_card = 0;
+        lavagna->colonne[i].cards = NULL;
     }
 
-    if(send_message(sd_utente, msg) < 0){
-        perror("Errore nell'invio dello stato della lavagna");
-        return -1;
-    }
-    return 0;
+    printf("Lavagna creata e pronta a ricevere connessioni.\n");
 }
+
+
+/*
+* ============================================================================ *
+* ============================================================================ *
+                    THREAD GESTIONE COMANDI LAVAGNA E UTENTI
+* ============================================================================ *
+* ============================================================================ *
+*/
+
+
+/*Funzione per la gestione dei comandi da terminale della lavagna*/
+void* gestione_lavagna(void* arg){
+    char comando[50];
+
+    while(1){
+        fgets(comando, sizeof(comando), stdin);
+        comando[strcspn(comando, "\n")] = 0; 
+
+        if(strcmp(comando, "SHOW_LAVAGNA") == 0){
+            pthread_mutex_lock(&accesso_lavagna);
+            show_lavagna();
+            pthread_mutex_unlock(&accesso_lavagna);
+            continue;
+        } 
+        
+        if(strcmp(comando, "HANDLE_CARD") == 0) {
+            pthread_mutex_lock(&accesso_lavagna);
+            handle_card();
+            pthread_mutex_unlock(&accesso_lavagna);
+            continue;
+        }
+        printf("Comando non riconosciuto.\n");
+    }
+
+    return NULL;
+}
+
 
 
 /*Funzione per la gestione di un utente connesso*/
@@ -669,112 +816,14 @@ void* gestione_utente(void* arg){
 }
 
 
-/*Funzione per l'attribuzione di card agli utenti connessi */
-void handle_card(){
 
-    int colonna_to_do = (int)TO_DO;
-
-    for(int i = 0; i < lavagna->colonne[colonna_to_do].numero_card; i++){
-
-        struct st_CARD card_selezionata = lavagna->colonne[colonna_to_do].cards[i];
-
-        /* Assegno la card al primo utente disponibile (occupato = 0) */
-        for(int j = 0; j < lavagna->numero_utenti_connessi; j++){
-
-            if(id_socket_x_lavagna[j].occupato == 0){
-                /* Costruisco il messaggio con lista utenti (escluso destinatario) */
-                char msg[1024];
-                char *pos = msg;
-                int num_utenti_escl = lavagna->numero_utenti_connessi - 1;
-                
-                /* Inizio messaggio con ID, testo e numero utenti */
-                pos += sprintf(pos, "HANDLE_CARD:%d:%s:%d", 
-                    card_selezionata.id, card_selezionata.testo, num_utenti_escl);
-                
-                /* Aggiungo lista porte (escludendo il destinatario alla posizione j) */
-                for(int k = 0; k < lavagna->numero_utenti_connessi; k++){
-                    if(k != j){
-                        pos += sprintf(pos, ":%d", lavagna->porta_utenti_connessi[k]);
-                    }
-                }
-                
-                /* Invio la card all'utente */
-                if(send_message(id_socket_x_lavagna[j].socket_id, msg) < 0){
-                    perror("Errore nell'invio della card all'utente");
-                }
-
-                /* Segno l'utente come occupato */
-                id_socket_x_lavagna[j].occupato = 1;
-                break;
-            }
-        }
-    }
-
-    printf("Card inviate, attesa ACK da parte degli utenti.\n");
-
-    return;
-}
-
-
-/*Funzione per la creazione della lavagna e inizializzazione*/
-void creazione_lavagna(){
-    /*Inizializzazione semafori*/
-    pthread_mutex_init(&accesso_lavagna, NULL);
-    pthread_mutex_init(&accesso_lista_socket, NULL);
-
-    /*Creazione lavagna*/
-    lavagna = malloc(sizeof(struct st_LAVAGNA));
-
-    if(lavagna == NULL){
-        perror("Errore nell'allocazione della lavagna");
-        exit(EXIT_FAILURE);
-    }
-
-    lavagna->id = 1;
-    lavagna->numero_utenti_connessi = 0;
-    lavagna->numero_card_totali = 0;
-    lavagna->porta_utenti_connessi = NULL;
-
-    for(int i = 0; i < NUM_COLONNE; i++){
-        lavagna->colonne[i].stato = (STATO_COLONNA)i;
-        lavagna->colonne[i].numero_card = 0;
-        lavagna->colonne[i].cards = NULL;
-    }
-
-    printf("Lavagna creata e pronta a ricevere connessioni.\n");
-}
-
-
-/*Funzione per la gestione dei comandi da terminale della lavagna*/
-void* gestione_lavagna(void* arg){
-    char comando[50];
-
-    while(1){
-        fgets(comando, sizeof(comando), stdin);
-        comando[strcspn(comando, "\n")] = 0; 
-
-        if(strcmp(comando, "SHOW_LAVAGNA") == 0){
-            pthread_mutex_lock(&accesso_lavagna);
-            show_lavagna();
-            pthread_mutex_unlock(&accesso_lavagna);
-            continue;
-        } 
-        
-        if(strcmp(comando, "HANDLE_CARD") == 0) {
-            pthread_mutex_lock(&accesso_lavagna);
-            handle_card();
-            pthread_mutex_unlock(&accesso_lavagna);
-            continue;
-        }
-        printf("Comando non riconosciuto.\n");
-    }
-
-    return NULL;
-}
-
-
-
-/*--------------------MAIN-------------------*/
+/*
+* ============================================================================ *
+* ============================================================================ *
+                                MAIN LAVAGNA
+* ============================================================================ *
+* ============================================================================ *
+*/
 int main(){
     creazione_lavagna();
     show_lavagna();
