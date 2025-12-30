@@ -1,1 +1,54 @@
-CREATE_CARD|HELLO|QUIT|MOVE_CARD|SHOW_LAVAGNA|SEND_USER_LIST|PING_USER|PONG_LAVAGNA|HANDLE_CARD|ACK_CARD|REQUEST_USER_LIST|REVIEW_CARD|CARD_DONE
+1. La lavagna deve partire con un numero minimo di card (10) già presenti nella colonna TO_DO all'avvio del server?
+
+Scelga lei se farla partire con 10 card, oppure far creare 10 card agli utenti che si registrano.
+
+
+2. Tutti i comandi richiesti devono essere invocabili direttamente dal terminale?
+In particolare, REVIEW_CARD deve essere un comando che fa parte del flusso logico sleep()+REQUEST_USER_LIST 
+oppure deve essere l'utente ad inserire il comando da terminale per far partire la fase di review.
+
+Non c’è nessuna richiesta specifica in merito, quindi anche qui, decida lei come fare. Vanno bene entrambe le opzioni, se correttamente motivate. V
+
+
+3. Nella stampa della lavagna è sufficiente mostrare solo l'ID della card e il testo, oppure è necessario visualizzare 
+anche gli altri campi che compongono la card?
+
+Solo id e testo.  V
+
+
+4. La porta passata come argomento a linea di comando (./utente 5679) deve essere validata a livello di codice, 
+ovvero devo controllare che il valore inserito sia maggiore di 5679?
+
+Veda lei. Si può assumere che tutti gli utenti scelgano correttamente porte progressive a quella di partenza. 
+Ma se vuole metterci qualche controllo sicuramente non verrà valutato negativamente. V
+
+
+5. Il comando SHOW_LAVAGNA può essere eseguito anche dal client per visualizzare lo stato della lavagna, 
+oppure solo il server può visualizzare la lavagna?
+
+Anche dall’utente. V
+
+
+6. Nelle specifiche si menziona che i giudizi in review sono sempre positivi. 
+Questo significa che le risposte alle REVIEW_CARD sono automaticamente approvate, senza richiedere conferma dall'utente?
+
+L’utente che ha iniziato la fase di review, deve essere sicuro che tutti abbiano risposto, 
+quindi che tutti quelli coinvolti nella fase di review mandino un messaggio di ok all’utente che ha completato l’attività. V
+
+
+7. La lavagna deve rimanere sempre visualizzabile nel terminale del server, 
+oppure viene stampata nel terminale solo quando si esegue il comando SHOW_LAVAGNA o in seguito a spostamenti di card?
+
+Scelga lei, non è richiesto che lo sia sempre, ma di sicuro ad ogni spostamento di una card (come da specifiche). V
+
+
+8. L'ID della card deve essere univoco?
+
+Si    V
+
+
+9. Nelle specifiche di CREATE_CARD viene detto "utenti comunicano alla lavagna 
+la creazione di una nuova card, assegnandole ID, Colonna e testo attività", quindi sta all'utente specificare l'id e la colonna?
+Se sì, un utente quindi può inserire una card direttamente in colonne che non siano TO_DO?
+
+Si è l’utente che specifica, e può inserire solo in “To Do”.   V

@@ -222,6 +222,15 @@ int create_card(const char* comando, int porta_utente){
     token = strtok(NULL, ":");
     char *testo = token;
 
+    /*Verifico che l'id della card non sia già presente nella Lavagna*/
+    for(int i = 0; i < 3; i++){
+        for(int j = 0; j < lavagna->colonne[i].numero_card; j++){
+            if(lavagna->colonne[i].cards[j].id == id_card){
+                return -1;
+            }
+        }
+    }
+
     /* Creazione della nuova card */
     struct st_CARD new_card;
     new_card.id = id_card;
@@ -423,7 +432,7 @@ int show_lavagna(){
         }
         printf("|\n");
         
-        /* Riga 2: Testo */
+        /* Riga 2: Testo con wrapping */
         int fine = 0;
         int line = 0;
         while (fine == 0) {
@@ -446,18 +455,18 @@ int show_lavagna(){
             }
             printf("|\n");
             line++;
-            int all_empty = 1;
+            int has_text = 0;
             for(int j = 0; j < NUM_COLONNE; j++){
                 if(i < lavagna->colonne[j].numero_card){
                     struct st_CARD card = lavagna->colonne[j].cards[i];
                     int start = line * 18;
                     if(start < strlen(card.testo)){
-                        all_empty = 0;
+                        has_text = 1;
                         break;
                     }
                 }
             }
-            if(all_empty){
+            if(!has_text){
                 fine = 1;
             }
         }
@@ -467,6 +476,46 @@ int show_lavagna(){
     return 0;
 }
 
+
+int send_show_lavagna(int sd_utente){
+    char msg[8192];
+    int pos = 0;
+
+    /* Formato: LAVAGNA_STATE:id_lavagna|max_cards|card1_col1:card2_col1:...|card1_col2:card2_col2...| */
+
+    pos += sprintf(msg + pos, "LAVAGNA_STATE:%d|", lavagna->id);
+    
+    int max_cards = 0;
+    for(int i = 0; i < NUM_COLONNE; i++){
+        if(lavagna->colonne[i].numero_card > max_cards){
+            max_cards = lavagna->colonne[i].numero_card;
+        }
+    }
+    
+    pos += sprintf(msg + pos, "%d|", max_cards);
+    
+    for(int col = 0; col < NUM_COLONNE; col++){
+        for(int i = 0; i < max_cards; i++){
+            if(i < lavagna->colonne[col].numero_card){
+                struct st_CARD card = lavagna->colonne[col].cards[i];
+                /* Aggiungo id e testo della card */
+                pos += sprintf(msg + pos, "%d,%s", card.id, card.testo);
+            }
+            if(i < max_cards - 1){
+                pos += sprintf(msg + pos, ":");
+            }
+        }
+        if(col < NUM_COLONNE - 1){
+            pos += sprintf(msg + pos, "|");
+        }
+    }
+
+    if(send_message(sd_utente, msg) < 0){
+        perror("Errore nell'invio dello stato della lavagna");
+        return -1;
+    }
+    return 0;
+}
 
 
 /*Funzione per la gestione di un utente connesso*/
@@ -479,7 +528,7 @@ void* gestione_utente(void* arg){
     while(1){
         /*Ricezione messaggio*/
         if(recv_message(sd_utente, buffer, sizeof(buffer)) < 0) {
-            printf("Connessione utente sulla porta %d chiusa.\n", sd_utente);
+            printf("Connessione utente sulla porta %d interrotta.\n", porta_utente);
             rimozione_utente(porta_utente);
             close(sd_utente);
             return NULL;
@@ -512,12 +561,8 @@ void* gestione_utente(void* arg){
         if (strcmp(buffer, "SHOW_LAVAGNA") == 0) {
 
             pthread_mutex_lock(&accesso_lavagna);
-            if(show_lavagna() != 0){
+            if(send_show_lavagna(sd_utente) != 0){
                 const char *risposta = "Errore nella visualizzazione della lavagna.";
-                send_message(sd_utente, risposta);
-            } 
-            else {            
-                const char *risposta = "Stato lavagna mostrato.";
                 send_message(sd_utente, risposta);
             }
             
@@ -540,7 +585,7 @@ void* gestione_utente(void* arg){
             printf("Comando CREATE_CARD ricevuto dalla porta %d.\n", porta_utente);
             pthread_mutex_lock(&accesso_lavagna);
             if(create_card(buffer, porta_utente) != 0){
-                const char *risposta = "Errore nella creazione della card.";
+                const char *risposta = "Errore nella creazione della card (ID possibile duplicato).";
                 send_message(sd_utente, risposta);
             } 
             else {
@@ -596,6 +641,9 @@ void* gestione_utente(void* arg){
                 const char *risposta = "Card completata con successo.";
                 send_message(sd_utente, risposta);                
             }
+
+            /* Una volta completata la card l'utente non è più occupato quindi riattribuisco una card */
+            handle_card();
 
             pthread_mutex_unlock(&accesso_lavagna);
             continue;
