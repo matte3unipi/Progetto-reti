@@ -1,6 +1,6 @@
 1. La lavagna deve partire con un numero minimo di card (10) già presenti nella colonna TO_DO all'avvio del server?
 
-Scelga lei se farla partire con 10 card, oppure far creare 10 card agli utenti che si registrano.
+Scelga lei se farla partire con 10 card, oppure far creare 10 card agli utenti che si registrano. V
 
 
 2. Tutti i comandi richiesti devono essere invocabili direttamente dal terminale?

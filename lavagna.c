@@ -39,29 +39,28 @@ int registrazione_utente(int porta_utente, int sd_utente){
     
     /* Controllo se la porta è già registrata */
     for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
-        if(lavagna->porta_utenti_connessi[i] == porta_utente){
+        if(lavagna->utenti_connessi[i].porta_utente == porta_utente){
             return -1;
         }
     }
 
     /* Aggiungo in coda l'utente*/
     lavagna->numero_utenti_connessi++;
-    lavagna->porta_utenti_connessi = realloc(lavagna->porta_utenti_connessi, 
-        lavagna->numero_utenti_connessi * sizeof(int));
+    lavagna->utenti_connessi = realloc(lavagna->utenti_connessi, 
+        lavagna->numero_utenti_connessi * sizeof(struct INFO_UTENTE));
 
-    if(lavagna->porta_utenti_connessi == NULL){
+    if(lavagna->utenti_connessi == NULL){
         perror("Errore nella registrazione dell'utente");
         exit(EXIT_FAILURE);
     }
 
     /*Salvo la porta dell'utente in coda*/
-    lavagna->porta_utenti_connessi[lavagna->numero_utenti_connessi - 1] = porta_utente;
+    lavagna->utenti_connessi[lavagna->numero_utenti_connessi - 1].porta_utente = porta_utente;
 
-    /*Salvo il socket dell'utente + la porta per identificare il socket in altre funzioni*/
-    id_socket_x_lavagna[lavagna->numero_utenti_connessi - 1].socket_id = sd_utente;
-    id_socket_x_lavagna[lavagna->numero_utenti_connessi - 1].occupato = 0;
-    id_socket_x_lavagna[lavagna->numero_utenti_connessi - 1].porta_utente = porta_utente;
-    id_socket_x_lavagna[lavagna->numero_utenti_connessi - 1].pong_ricevuto = 0;
+    /*Salvo il socket dell'utente + la setto le variabili per la gestione delle card*/
+    lavagna->utenti_connessi[lavagna->numero_utenti_connessi - 1].socket_id = sd_utente;
+    lavagna->utenti_connessi[lavagna->numero_utenti_connessi - 1].occupato = 0;
+    lavagna->utenti_connessi[lavagna->numero_utenti_connessi - 1].pong_ricevuto = 0;
 
     return 0;
 }
@@ -76,27 +75,26 @@ int rimozione_utente(int porta_utente){
     
     /*Cerco l'utente e lo rimuovo dalla lista*/
     for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
-        if(lavagna->porta_utenti_connessi[i] == porta_utente) {
+        if(lavagna->utenti_connessi[i].porta_utente == porta_utente) {
             trovato = 1;
 
             /*Rimuovo la porta e il socket associato*/
-            id_socket_x_lavagna[i].socket_id = 0;
-            id_socket_x_lavagna[i].occupato = 0;
-            id_socket_x_lavagna[i].porta_utente = 0;
+            lavagna->utenti_connessi[i].socket_id = 0;
+            lavagna->utenti_connessi[i].occupato = 0;
+            lavagna->utenti_connessi[i].porta_utente = 0;
         }
         if(trovato && i < lavagna->numero_utenti_connessi - 1) {
-            lavagna->porta_utenti_connessi[i] = lavagna->porta_utenti_connessi[i + 1];
-            id_socket_x_lavagna[i] = id_socket_x_lavagna[i + 1];
+            lavagna->utenti_connessi[i] = lavagna->utenti_connessi[i + 1];
         }
     }
 
     /*Se ho trovato l'utente rialloco le porte*/
     if(trovato){
         lavagna->numero_utenti_connessi--;
-        lavagna->porta_utenti_connessi = realloc(lavagna->porta_utenti_connessi, 
-            lavagna->numero_utenti_connessi * sizeof(int));
+        lavagna->utenti_connessi = realloc(lavagna->utenti_connessi, 
+            lavagna->numero_utenti_connessi * sizeof(struct INFO_UTENTE));
 
-        if(lavagna->numero_utenti_connessi > 0 && lavagna->porta_utenti_connessi == NULL){
+        if(lavagna->numero_utenti_connessi > 0 && lavagna->utenti_connessi == NULL){
             perror("Errore nella rimozione dell'utente");
             exit(EXIT_FAILURE);
         }
@@ -114,8 +112,8 @@ void* ping_user(void* arg){
     /* Trovo il socket dell'utente dalla porta */
     pthread_mutex_lock(&accesso_lavagna);
     for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
-        if(id_socket_x_lavagna[i].porta_utente == porta_utente){
-            socket_utente = id_socket_x_lavagna[i].socket_id;
+        if(lavagna->utenti_connessi[i].porta_utente == porta_utente){
+            socket_utente = lavagna->utenti_connessi[i].socket_id;
             break;
         }
     }
@@ -141,16 +139,16 @@ void* ping_user(void* arg){
     /* Controllo se è stato ricevuto il pong */
     pthread_mutex_lock(&accesso_lavagna);
     for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
-        if(id_socket_x_lavagna[i].porta_utente == porta_utente){
+        if(lavagna->utenti_connessi[i].porta_utente == porta_utente){
 
-            if(id_socket_x_lavagna[i].pong_ricevuto == 0){
+            if(lavagna->utenti_connessi[i].pong_ricevuto == 0){
                 printf("Nessun pong ricevuto dall'utente sulla porta %d. Procedo alla rimozione.\n", porta_utente);
                 /* Rimuovo l'utente */
                 rimozione_utente(porta_utente);
                 close(socket_utente);
             } else {
                 /* Resetto il flag per il prossimo ping */
-                id_socket_x_lavagna[i].pong_ricevuto = 0;
+                lavagna->utenti_connessi[i].pong_ricevuto = 0;
             }
             break;
         }
@@ -376,8 +374,8 @@ int card_done(const char* buffer, int porta_utente){
 
     /*Una volta arrivato l'ack l'utente non è più occupato*/
     for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
-        if(id_socket_x_lavagna[i].porta_utente == porta_utente){
-            id_socket_x_lavagna[i].occupato = 0;
+        if(lavagna->utenti_connessi[i].porta_utente == porta_utente){
+            lavagna->utenti_connessi[i].occupato = 0;
             break;
         }
     }
@@ -407,11 +405,11 @@ int send_user_list(int sd, int porta_destinatario){
 
     /*Inserisco lista porte utenti (escludendo la porta del destinatario)*/
     for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
-        if(lavagna->porta_utenti_connessi[i] == porta_destinatario){
+        if(lavagna->utenti_connessi[i].porta_utente == porta_destinatario){
             continue;
         }
         char porta_str[10];
-        sprintf(porta_str, "%d", lavagna->porta_utenti_connessi[i]);
+        sprintf(porta_str, "%d", lavagna->utenti_connessi[i].porta_utente);
         strcat(lista, porta_str);
         if(i < lavagna->numero_utenti_connessi - 1){
             strcat(lista, ":");
@@ -483,7 +481,7 @@ void handle_card(){
         /* Assegno la card al primo utente disponibile (occupato = 0) */
         for(int j = 0; j < lavagna->numero_utenti_connessi; j++){
 
-            if(id_socket_x_lavagna[j].occupato == 0){
+            if(lavagna->utenti_connessi[j].occupato == 0){
                 /* Costruisco il messaggio con lista utenti (escluso destinatario) */
                 char msg[1024];
                 char *pos = msg;
@@ -496,17 +494,17 @@ void handle_card(){
                 /* Aggiungo lista porte (escludendo il destinatario alla posizione j) */
                 for(int k = 0; k < lavagna->numero_utenti_connessi; k++){
                     if(k != j){
-                        pos += sprintf(pos, ":%d", lavagna->porta_utenti_connessi[k]);
+                        pos += sprintf(pos, ":%d", lavagna->utenti_connessi[k].porta_utente);
                     }
                 }
                 
                 /* Invio la card all'utente */
-                if(send_message(id_socket_x_lavagna[j].socket_id, msg) < 0){
+                if(send_message(lavagna->utenti_connessi[j].socket_id, msg) < 0){
                     perror("Errore nell'invio della card all'utente");
                 }
 
                 /* Segno l'utente come occupato */
-                id_socket_x_lavagna[j].occupato = 1;
+                lavagna->utenti_connessi[j].occupato = 1;
                 break;
             }
         }
@@ -602,7 +600,6 @@ int show_lavagna(){
 void creazione_lavagna(){
     /*Inizializzazione semafori*/
     pthread_mutex_init(&accesso_lavagna, NULL);
-    pthread_mutex_init(&accesso_lista_socket, NULL);
 
     /*Creazione lavagna*/
     lavagna = malloc(sizeof(struct st_LAVAGNA));
@@ -615,7 +612,7 @@ void creazione_lavagna(){
     lavagna->id = 1;
     lavagna->numero_utenti_connessi = 0;
     lavagna->numero_card_totali = 0;
-    lavagna->porta_utenti_connessi = NULL;
+    lavagna->utenti_connessi = NULL;
 
     for(int i = 0; i < NUM_COLONNE; i++){
         lavagna->colonne[i].stato = (STATO_COLONNA)i;
@@ -657,6 +654,22 @@ void* gestione_lavagna(void* arg){
             pthread_mutex_unlock(&accesso_lavagna);
             continue;
         }
+
+        if (strcmp(comando, "SEND_USER_LIST")==0) {
+            pthread_mutex_lock(&accesso_lavagna);
+            for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
+                int sd_utente = lavagna->utenti_connessi[i].socket_id;
+                int porta_utente = lavagna->utenti_connessi[i].porta_utente;
+                if(send_user_list(sd_utente, porta_utente) != 0){
+                    printf("Errore nell'invio della lista utenti alla porta %d.\n", porta_utente);
+                } else {
+                    printf("Lista utenti inviata con successo alla porta %d.\n", porta_utente);
+                }
+            }
+            pthread_mutex_unlock(&accesso_lavagna);
+            continue;
+        }
+        
         printf("Comando non riconosciuto.\n");
     }
 
@@ -799,15 +812,15 @@ void* gestione_utente(void* arg){
 
         /*Comando PONG + gestione*/
         if(strncmp(buffer, "PONG", 4) == 0){
-            pthread_mutex_lock(&accesso_lista_socket);
+            pthread_mutex_lock(&accesso_lavagna);
             for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
-                if(id_socket_x_lavagna[i].porta_utente == porta_utente){
-                    id_socket_x_lavagna[i].pong_ricevuto = 1;
+                if(lavagna->utenti_connessi[i].porta_utente == porta_utente){
+                    lavagna->utenti_connessi[i].pong_ricevuto = 1;
                     printf("Pong ricevuto dall'utente sulla porta %d.\n", porta_utente);
                     break;
                 }
             }
-            pthread_mutex_unlock(&accesso_lista_socket);
+            pthread_mutex_unlock(&accesso_lavagna);
             continue;
         }
     }

@@ -105,7 +105,7 @@ Alla ricezione di un “HELLO” da parte di un utente, registra in una struttur
 e aggiorna il contatore degli utenti connessi. Alla ricezione di un “QUIT” da parte di un utente,
 rimuove porta e aggiorna il contatore degli utenti connessi. \
 Quando riceve informazioni dagli utenti (ACK_CARD o CARD_DONE), usa il comando
-MOVE_CARD per spostare la card nella colonna corretta. Se una card è nella colonna “To Do” per
+MOVE_CARD per spostare la card nella colonna corretta. Se una card è nella colonna “DOING” per
 più di un certo tempo (es: 1.30min), la lavagna manda PING_USER, e se non riceve
 PONG_LAVAGNA entro 30s, sposta la card in “To Do”, assumendo che l’utente si è disconnesso
 inaspettatamente.

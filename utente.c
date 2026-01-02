@@ -9,27 +9,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include "funzioni_x_msg.h"
-
-/*Definizioni*/
-#define PORTA_LAVAGNA 5678
-#define RIGA_SEPARATORIA "<----------------------------------------\n"
-
-/*Dati utili per il codice*/
-int hello_eseguito = 0;
-int porta_utente = 0;
-int ping_ricevuto = 0;
-pthread_mutex_t ascolto;
-
-struct CARD_ASSEGNATA {
-    int id;
-    char testo[256];
-    int porte_utenti[100];
-    int num_utenti;
-    int review_ricevute;
-    int card_done_inviata;
-};
-struct CARD_ASSEGNATA card_assegnata;
-
+#include "strutture_utente.h"
 
 
 /*
@@ -249,6 +229,11 @@ void save_user_list(const char* msg) {
     char *token = strtok(lista_copia, ":");
     card_assegnata.num_utenti = atoi(token);
     card_assegnata.review_ricevute = 0;
+
+    if(card_assegnata.porte_utenti != NULL) {
+        free(card_assegnata.porte_utenti);
+    }
+    card_assegnata.porte_utenti = malloc(card_assegnata.num_utenti * sizeof(int));
     for(int i = 0; i < card_assegnata.num_utenti; i++) {
         token = strtok(NULL, ":");
         card_assegnata.porte_utenti[i] = atoi(token);
@@ -583,6 +568,7 @@ void* gestione_ascolto(void* arg) {
     while(1) {
         if(recv_message(sd, buffer, sizeof(buffer) - 1) <= 0) {
             printf("Connessione chiusa dalla lavagna.\n");
+            connessione_attiva = 0;
             break;
         }
     
@@ -670,6 +656,7 @@ int main(int argc, char *argv[]) {
     }
 
     printf("Connessione alla lavagna avvenuta con successo.\n");
+    connessione_attiva = 1;
 
     /* Server P2P per ricevere REVIEW_CARD */
     pthread_t thread_server_p2p;
@@ -684,7 +671,7 @@ int main(int argc, char *argv[]) {
     /* Controllo che i comandi inseriti da tastiera siano quelli permessi.*/
     char comando[20];
 
-    while (1){        
+    while (connessione_attiva){        
         printf("Inserisci il comando\n");
         scanf("%s", comando);
 

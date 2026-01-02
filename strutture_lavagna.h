@@ -30,12 +30,12 @@ struct st_COLONNA {
 struct st_LAVAGNA {
     int id;
     struct st_COLONNA colonne[NUM_COLONNE];
-    int *porta_utenti_connessi;
+    struct INFO_UTENTE *utenti_connessi;
     int numero_utenti_connessi;
     int numero_card_totali;
 };
 
-struct SOCKET_UTENTE {
+struct INFO_UTENTE {
     int porta_utente;
     int socket_id;
     int occupato;
@@ -43,7 +43,6 @@ struct SOCKET_UTENTE {
 };
 
 struct st_LAVAGNA* lavagna = NULL;
-struct SOCKET_UTENTE id_socket_x_lavagna [MAX_CLIENTS];
 
 /*Semafori*/
 pthread_mutex_t accesso_lavagna;
