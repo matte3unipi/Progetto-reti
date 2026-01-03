@@ -57,7 +57,7 @@ int quit_function(int sd) {
     }
 
     char msg[20];
-    sprintf(msg, "QUIT:%d", porta_utente);
+    sprintf(msg, "QUIT");
 
     if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio QUIT");
@@ -258,6 +258,15 @@ void handle_card_function(const char* msg) {
     card_assegnata.num_utenti = atoi(token);
     card_assegnata.review_ricevute = 0;
     card_assegnata.card_done_inviata = 0;
+
+    if(card_assegnata.porte_utenti != NULL) {
+        free(card_assegnata.porte_utenti);
+    }
+    card_assegnata.porte_utenti = malloc(card_assegnata.num_utenti * sizeof(int));
+    if(card_assegnata.porte_utenti == NULL) {
+        perror("Errore nell'allocazione delle porte");
+        return;
+    }
 
     for(int i = 0; i < card_assegnata.num_utenti; i++) {
         token = strtok(NULL, ":");
@@ -555,7 +564,7 @@ void* server_p2p(void* arg) {
 /*
 * ============================================================================ *
 * ============================================================================ *
-                            Parte recezione da lavagna
+                            GESTIONE ricezione da lavagna
 * ============================================================================ *
 * ============================================================================ *
 */
@@ -579,15 +588,18 @@ void* gestione_ascolto(void* arg) {
         /* Lista utenti ricevuta */
         else if (strncmp(buffer, "SEND_USER_LIST:", 15) == 0) {
             save_user_list(buffer + 15);
+            continue;
         }
         /* Nuova card assegnata */
         else if(strncmp(buffer,"HANDLE_CARD:",12)==0){
             handle_card_function(buffer + 12);
+            continue;
         }
         /* Risposta al ping */
         else if(strncmp(buffer, "PING", 4) == 0){
             ping_ricevuto = 1;
             printf("PING ricevuto dalla lavagna.\n");
+            continue;
         }
         /* SHOW_LAVAGNA */
         else if(strncmp(buffer, "LAVAGNA_STATE:",14) == 0){
@@ -608,7 +620,7 @@ void* gestione_ascolto(void* arg) {
 /*
 * ============================================================================ *
 * ============================================================================ *
-                                MAIN UTENTE
+                            MAIN UTENTE - GESTIONE COMANDI
 * ============================================================================ *
 * ============================================================================ *
 */

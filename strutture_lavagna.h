@@ -2,7 +2,7 @@
 #define MIN_CARD 10 
 #define NUM_COLONNE 3
 #define MIN_UTENTI 4
-#define RIGA_SEPARATORIA "----------------------------------------\n"
+#define RIGA_SEPARATORIA "<----------------------------------------\n"
 
 #define MAX_CLIENTS 100
 
@@ -46,4 +46,3 @@ struct st_LAVAGNA* lavagna = NULL;
 
 /*Semafori*/
 pthread_mutex_t accesso_lavagna;
-pthread_mutex_t accesso_lista_socket;

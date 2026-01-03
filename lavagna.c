@@ -15,16 +15,18 @@
 int registrazione_utente(int porta_utente, int sd_utente);
 int rimozione_utente(int porta_utente);
 int controllo_stato(const char *str);
-int create_card(const char* comando, int porta_utente);
+int create_card(const char* dati, int porta_utente);
 int move_card(int id_card, STATO_COLONNA vecchia_colonna, STATO_COLONNA nuova_colonna);
-int ack_card(const char* buffer, int porta_utente);
-int card_done(const char* buffer, int porta_utente);
+int ack_card(int id_card, int porta_utente);
+int card_done(int id_card, int porta_utente);
 void card_doing_check(int porta_utente);
 int send_user_list(int sd, int porta_destinatario);
+int send_show_lavagna(int sd_utente);
+void uptade_version_utente();
 void handle_card();
 int show_lavagna();
 void creazione_lavagna();
-int send_show_lavagna(int sd_utente);
+
 
 /*
 * ============================================================================ *
@@ -217,17 +219,15 @@ void card_doing_check(int porta_utente){
 }
 
 /*Funzione per la creazione di una nuova card*/
-int create_card(const char* comando, int porta_utente){
-    /* Parsing del comando */
+int create_card(const char* dati, int porta_utente){
+    /* Parsing dei dati */
     char card_copia[512];
-    strncpy(card_copia, comando, sizeof(card_copia));
+    strncpy(card_copia, dati, sizeof(card_copia));
     card_copia[sizeof(card_copia) - 1] = '\0';
 
     /* Estraggo i campi della card */
     char *token = strtok(card_copia, ":");
-    token = strtok(NULL, ":");
     int id_card = atoi(token);
-
     token = strtok(NULL, ":");
     STATO_COLONNA colonna = controllo_stato(token);
     if(colonna == -1){
@@ -317,22 +317,13 @@ int move_card(int id_card, STATO_COLONNA vecchia_colonna, STATO_COLONNA nuova_co
     lavagna->colonne[nuova_col_id].cards[lavagna->colonne[nuova_col_id].numero_card - 1] = card_select;      
 
     show_lavagna();
+    uptade_version_utente();
     return 0;
 }
 
 
 /*Funzione per spostare una card da TO_DO a DOING in seguito ad un ack*/
-int ack_card(const char* buffer, int porta_utente){
-    /*Estraggo l'id e la colonna della card in questione*/
-    char ack_copia[64];
-    strncpy(ack_copia, buffer, sizeof(ack_copia));
-    ack_copia[sizeof(ack_copia) - 1] = '\0';
-
-    char *token = strtok(ack_copia, ":");
-    token = strtok(NULL, ":");
-    int id_card = atoi(token);
-
-
+int ack_card(int id_card, int porta_utente){
     // Trova la card in TO_DO e salva la porta
     for(int i = 0; i < lavagna->colonne[TO_DO].numero_card; i++){
         if(lavagna->colonne[TO_DO].cards[i].id == id_card){
@@ -349,16 +340,7 @@ int ack_card(const char* buffer, int porta_utente){
 }
 
 /*Funzione per spostare una card da DOING a DONE in seguito ad un ack*/
-int card_done(const char* buffer, int porta_utente){
-    /*Estraggo l'id e la colonna della card in questione*/
-    char ack_copia[64];
-    strncpy(ack_copia, buffer, sizeof(ack_copia));
-    ack_copia[sizeof(ack_copia) - 1] = '\0';
-
-    char *token = strtok(ack_copia, ":");
-    token = strtok(NULL, ":");
-    int id_card = atoi(token);
-
+int card_done(int id_card, int porta_utente){
     /*Trovo la card in DOING e salvo la porta e il timestamp*/
     for(int i = 0; i < lavagna->colonne[DOING].numero_card; i++){
         if(lavagna->colonne[DOING].cards[i].id == id_card){
@@ -467,7 +449,17 @@ int send_show_lavagna(int sd_utente){
     return 0;
 }
 
-
+void uptade_version_utente(){
+    /* Aggiorno la versione della lavagna per tutti gli utenti connessi */
+    for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
+        int sd_utente = lavagna->utenti_connessi[i].socket_id;
+        if(send_show_lavagna(sd_utente) < 0){
+            printf("Errore nell'aggiornamento della lavagna per l'utente sulla porta %d.\n", 
+                lavagna->utenti_connessi[i].porta_utente);
+        }
+    }
+    return;
+}
 
 /*Funzione per l'attribuzione di card agli utenti connessi */
 void handle_card(){
@@ -527,6 +519,7 @@ void handle_card(){
 
 /*Funzione per la visualizzazione della lavagna*/
 int show_lavagna(){
+    printf("\n");
     printf("----------------------------------------------------------------\n");
     printf("|                         Lavagna - %d                          |\n", lavagna->id);
     printf("----------------------------------------------------------------\n");
@@ -590,7 +583,7 @@ int show_lavagna(){
                 fine = 1;
             }
         }
-        printf("----------------------------------------------------------------\n");
+        printf("----------------------------------------------------------------\n\n");
     }
 
     return 0;
@@ -731,7 +724,7 @@ void* gestione_utente(void* arg){
         }
 
         /*Comando QUIT*/
-        if (strncmp(buffer, "QUIT:", 5) == 0) {
+        if (strncmp(buffer, "QUIT", 4) == 0) {
             printf("Utente sulla porta %d disconnesso.\n", porta_utente);
             pthread_mutex_lock(&accesso_lavagna);
             rimozione_utente(porta_utente);
@@ -743,8 +736,9 @@ void* gestione_utente(void* arg){
         /*Comando CREATE_CARD*/
         if (strncmp(buffer, "CREATE_CARD:", 12) == 0){
             printf("Comando CREATE_CARD ricevuto dalla porta %d.\n", porta_utente);
+
             pthread_mutex_lock(&accesso_lavagna);
-            if(create_card(buffer, porta_utente) != 0){
+            if(create_card(buffer + 12, porta_utente) != 0){
                 const char *risposta = "Errore nella creazione della card (ID possibile duplicato).";
                 send_message(sd_utente, risposta);
             } 
@@ -760,8 +754,10 @@ void* gestione_utente(void* arg){
         /*Comando ACK_CARD*/
         if(strncmp(buffer, "ACK_CARD:", 9) == 0){
             printf("Comando ACK_CARD ricevuto dalla porta %d.\n", porta_utente);
+
+            int id = atoi(buffer + 9);
             pthread_mutex_lock(&accesso_lavagna);
-            if(ack_card(buffer, porta_utente) != 0){
+            if(ack_card(id, porta_utente) != 0){
                 const char *risposta = "Errore nell'ack della card.";
                 send_message(sd_utente, risposta);
             }
@@ -792,8 +788,10 @@ void* gestione_utente(void* arg){
         /*Comando CARD_DONE*/
         if(strncmp(buffer, "CARD_DONE:",10) == 0){
             printf("Comando CARD_DONE ricevuto dalla porta %d.\n", porta_utente);
+
+            int id = atoi(buffer + 10);
             pthread_mutex_lock(&accesso_lavagna);
-            if(card_done(buffer, porta_utente) != 0){
+            if(card_done(id, porta_utente) != 0){
                 const char *risposta = "Errore nel completamento della card.";
                 send_message(sd_utente, risposta);
             }
@@ -896,7 +894,11 @@ int main(){
         printf("Connessione accettata da un utente.\n");
 
         pthread_t td;
-        pthread_create(&td, NULL, gestione_utente, (void *)(intptr_t)new_socket);
+        if(pthread_create(&td, NULL, gestione_utente, (void *)(intptr_t)new_socket) != 0){
+            perror("Errore nella creazione del thread per l'utente");
+            close(new_socket);
+            continue;
+        }
         pthread_detach(td);
     }
 
