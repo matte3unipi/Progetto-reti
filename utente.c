@@ -18,18 +18,12 @@
                     Funzioni gestione comandi utente
 * ============================================================================ *
 * ============================================================================ *
-IMPLEMENTATI:
-- hello_function
-- quit_function
-- show_lavagna_function
-- create_card_function
-- request_user_list_function
-- ack_card_function
-- card_done_function
-- pong_lavagna_function
 */
 
-/*Funzione per gestire il comando HELLO */
+/*
+Funzione per gestire il comando HELLO 
+    @param sd: socket
+*/
 void hello_function(int sd) {
     if(hello_eseguito) {
         printf("Comando HELLO già eseguito in questa sessione.\n");
@@ -49,7 +43,10 @@ void hello_function(int sd) {
     return;
 }
 
-/*Funzione per gestire il comando QUIT */
+/*
+Funzione per gestire il comando QUIT 
+    @param sd: socket
+*/
 int quit_function(int sd) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
@@ -72,6 +69,10 @@ int quit_function(int sd) {
 }
 
 
+/*
+Funzione per gestire il comando SHOW_LAVAGNA 
+    @param sd: socket
+*/
 void show_lavagna_function(int sd) {
     char msg[] = "SHOW_LAVAGNA";
     if(send_message(sd, msg) < 0) {
@@ -83,7 +84,10 @@ void show_lavagna_function(int sd) {
 }
 
 
-/*Funzione per gestire il comando CREATE_CARD */
+/*
+Funzione per gestire il comando CREATE_CARD 
+    @param sd: socket
+*/
 void create_card_function(int sd) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
@@ -117,7 +121,10 @@ void create_card_function(int sd) {
     return;
 }
 
-/*Funzione per gestire il comando REQUEST_USER_LIST */
+/*
+Funzione per gestire il comando REQUEST_USER_LIST 
+    @param sd: socket    
+*/
 void request_user_list_function(int sd) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
@@ -135,7 +142,10 @@ void request_user_list_function(int sd) {
     return;
 }
 
-/*Funzione per gestire il comando ACK_CARD */
+/*
+Funzione per gestire il comando ACK_CARD 
+    @param sd: socket
+*/
 void ack_card_function(int sd) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
@@ -152,7 +162,10 @@ void ack_card_function(int sd) {
     }
 }
 
-/*Funzione per gestire il comando CARD_DONE */
+/*
+Funzione per gestire il comando CARD_DONE 
+    @param sd: socket
+*/
 void card_done_function(int sd) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
@@ -182,7 +195,10 @@ void card_done_function(int sd) {
     return;
 }
 
-/*Funzione per gestire il comando PONG_LAVAGNA */
+/*
+Funzione per gestire il comando PONG_LAVAGNA 
+    @param sd: socket
+*/
 void pong_lavagna_function(int sd) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
@@ -212,14 +228,13 @@ void pong_lavagna_function(int sd) {
                     Funzioni gestione messaggi da lavagna
 * ============================================================================ *
 * ============================================================================ *
-IMPLEMENTATI:
-- save_user_list
-- handle_card_function
-- print_lavagna
 */
 
 
-/*Funzione per salvare la lista delle porte utenti ricevuta*/
+/*
+Funzione per salvare la lista delle porte utenti ricevuta
+    @param msg: lista utenti
+*/
 void save_user_list(const char* msg) {
     printf("Ricevuta lista utenti dalla lavagna.\n");
 
@@ -242,7 +257,10 @@ void save_user_list(const char* msg) {
     return;
 }
 
-/*Funzione per gestire l'arrivo di una card*/
+/*
+Funzione per gestire l'arrivo di una card
+    @param msg: dati card id:testo:porte utenti
+*/
 void handle_card_function(const char* msg) {
     /* Copio il messaggio per lavorare*/
     char testo_card[1024];
@@ -402,13 +420,12 @@ void print_lavagna(const char* msg) {
                 Parte gestione comunicazioni P2P per REVIEW_CARD
 * ============================================================================ *
 * ============================================================================ *
-IMPLEMENTATI:
-- review_card_function
-- server_p2p
-- gestione_p2p_review
 */
 
-/*Thread per socket p2p*/
+/*
+Thread per socket p2p
+    @param arg: porta destinatario
+*/
 void* gestione_p2p_review(void* arg) {
     int porta_destinatario = (int)(intptr_t)arg;
 
@@ -464,7 +481,10 @@ void* gestione_p2p_review(void* arg) {
     return NULL;
 }
 
-/*Funzione per gestire il comando REVIEW_CARD */
+/*
+Funzione per gestire il comando REVIEW_CARD 
+    @param sd: socket
+*/
 void review_card_function(int sd) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
@@ -499,7 +519,10 @@ void review_card_function(int sd) {
     }
 }
 
-/* Thread server P2P per ricevere REVIEW_CARD */
+/* 
+Thread server P2P per ricevere REVIEW_CARD 
+    @param arg: porta utente
+*/
 void* server_p2p(void* arg) {
     int porta_utente = (int)(intptr_t)arg;
 
@@ -672,12 +695,20 @@ int main(int argc, char *argv[]) {
 
     /* Server P2P per ricevere REVIEW_CARD */
     pthread_t thread_server_p2p;
-    pthread_create(&thread_server_p2p, NULL, server_p2p, (void *)(intptr_t)porta_utente);
+    if(pthread_create(&thread_server_p2p, NULL, server_p2p, (void *)(intptr_t)porta_utente) != 0) {
+        perror("Errore nella creazione del thread server P2P");
+        close(sd);
+        exit(EXIT_FAILURE);
+    }
     pthread_detach(thread_server_p2p);
     
     /*Creazione thread per ascoltare dati in arrivo */
     pthread_t thread_ascolto;
-    pthread_create(&thread_ascolto, NULL, gestione_ascolto, (void *)(intptr_t)sd);
+    if(pthread_create(&thread_ascolto, NULL, gestione_ascolto, (void *)(intptr_t)sd) != 0) {
+        perror("Errore nella creazione del thread di ascolto");
+        close(sd);
+        exit(EXIT_FAILURE);
+    }
     pthread_detach(thread_ascolto);
 
     /* Controllo che i comandi inseriti da tastiera siano quelli permessi.*/
@@ -689,7 +720,6 @@ int main(int argc, char *argv[]) {
 
         printf(RIGA_SEPARATORIA);
 
-        // Invia il comando alla lavagna
         if(strcmp(comando, "HELLO") == 0) {
             hello_function(sd);
         }
