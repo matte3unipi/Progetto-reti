@@ -152,6 +152,11 @@ void ack_card_function(int sd) {
         return;
     }
 
+    if(card_assegnata.id < 0) {
+        printf("Non hai nessuna card assegnata.\n");
+        return;
+    }
+
     char msg[50];
     sprintf(msg, "ACK_CARD:%d", card_assegnata.id);
     if(send_message(sd, msg) < 0) {
@@ -169,6 +174,11 @@ Funzione per gestire il comando CARD_DONE
 void card_done_function(int sd) {
     if(!hello_eseguito) {
         printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
+        return;
+    }
+
+    if(card_assegnata.id < 0) {
+        printf("Non hai nessuna card assegnata.\n");
         return;
     }
 
@@ -190,6 +200,7 @@ void card_done_function(int sd) {
     } else {
         printf("Comando CARD_DONE eseguito per la card ID %d.\n", card_assegnata.id);
         card_assegnata.card_done_inviata = 1;
+        card_assegnata.id = -1;  /* Reset card assegnata */
     }
 
     return;
@@ -491,6 +502,11 @@ void review_card_function(int sd) {
         return;
     }
 
+    if(card_assegnata.id < 0) {
+        printf("Non hai nessuna card assegnata.\n");
+        return;
+    }
+
     /* Richiedo la lista degli utenti connessi */
     request_user_list_function(sd);
     sleep(1);  /* Attendo che la lista venga salvata */
@@ -607,6 +623,9 @@ void* gestione_ascolto(void* arg) {
         /* Registrazione HELLO */
         if (strncmp(buffer, "Registrazione avvenuta con successo.", 36) == 0) {
             hello_eseguito = 1;
+        }
+        else if(strncmp(buffer, "Errore nell'ack della card.", 33) == 0) {
+            card_assegnata.id = -1;  /* Reset card assegnata */
         }
         /* Lista utenti ricevuta */
         else if (strncmp(buffer, "SEND_USER_LIST:", 15) == 0) {

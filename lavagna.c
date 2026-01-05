@@ -22,7 +22,6 @@ int card_done(int id_card, int porta_utente);
 void card_doing_check(int porta_utente);
 int send_user_list(int sd, int porta_destinatario);
 int send_show_lavagna(int sd_utente);
-void update_version_utente();
 void handle_card();
 int show_lavagna();
 void creazione_lavagna();
@@ -343,7 +342,7 @@ int move_card(int id_card, STATO_COLONNA vecchia_colonna, STATO_COLONNA nuova_co
     lavagna->colonne[nuova_col_id].cards[lavagna->colonne[nuova_col_id].numero_card - 1] = card_select;      
 
     show_lavagna();
-    // update_version_utente(); da problemi CRASHA
+    pthread_cond_signal(&lavagna_aggiornata);
     return 0;
 }
 
@@ -359,15 +358,17 @@ int ack_card(int id_card, int porta_utente){
         if(lavagna->colonne[TO_DO].cards[i].id == id_card){
             lavagna->colonne[TO_DO].cards[i].porta_utente = porta_utente;
             lavagna->colonne[TO_DO].cards[i].timestamp_ultima_modifica = time(NULL);
-            break;
+
+            /* Sposto la card da TO_DO a DOING */
+            if(move_card(id_card, TO_DO, DOING) != 0){
+                return -1;
+            }
+
+            return 0;
         }
     }
 
-    /* Sposto la card da TO_DO a DOING */
-    if(move_card(id_card, TO_DO, DOING) != 0){
-        return -1;
-    }
-    return 0;
+    return -1;
 }
 
 /*
@@ -489,17 +490,6 @@ int send_show_lavagna(int sd_utente){
     return 0;
 }
 
-/* Funzione per aggiornare la versione della lavagna per tutti gli utenti connessi */
-void update_version_utente(){
-    for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
-        int sd_utente = lavagna->utenti_connessi[i].socket_id;
-        if(send_show_lavagna(sd_utente) < 0){
-            printf("Errore nell'aggiornamento della lavagna per l'utente sulla porta %d.\n", 
-                lavagna->utenti_connessi[i].porta_utente);
-        }
-    }
-    return;
-}
 
 /* Funzione per l'attribuzione di card agli utenti connessi */
 void handle_card(){
@@ -545,6 +535,29 @@ void handle_card(){
     printf("Card inviate, attesa ACK da parte degli utenti.\n");
 
     return;
+}
+
+/*
+Thread per il broadcast dello stato della lavagna agli utenti
+    @param arg: non usato
+*/
+void* lavagna_broadcast(void* arg){
+    pthread_mutex_lock(&accesso_lavagna);
+    while(1){
+        pthread_cond_wait(&lavagna_aggiornata, &accesso_lavagna);
+        for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
+            int sd_utente = lavagna->utenti_connessi[i].socket_id;
+            if(sd_utente < 0){
+                continue;
+            }
+            if(send_show_lavagna(sd_utente) != 0){
+                printf("Errore nell'invio dello stato della lavagna alla porta %d.\n", 
+                    lavagna->utenti_connessi[i].porta_utente);
+            }
+        }
+    }
+    pthread_mutex_unlock(&accesso_lavagna);
+    return NULL;
 }
 
 
@@ -631,8 +644,9 @@ int show_lavagna(){
 
 /*Funzione per la creazione della lavagna e inizializzazione*/
 void creazione_lavagna(){
-    /*Inizializzazione semafori*/
+    /*Inizializzazione semafori e var condition*/
     pthread_mutex_init(&accesso_lavagna, NULL);
+    pthread_cond_init(&lavagna_aggiornata, NULL);
 
     /*Creazione lavagna*/
     lavagna = malloc(sizeof(struct st_LAVAGNA));
@@ -673,18 +687,22 @@ void* gestione_lavagna(void* arg){
         fgets(comando, sizeof(comando), stdin);
         comando[strcspn(comando, "\n")] = 0; 
 
+        /*Gestione comandi*/
+        /*Comando SHOW_LAVAGNA*/
         if(strcmp(comando, "SHOW_LAVAGNA") == 0){
             pthread_mutex_lock(&accesso_lavagna);
             show_lavagna();
             pthread_mutex_unlock(&accesso_lavagna);
             continue;
         } 
+        /*Comando HANDLE_CARD*/
         else if(strcmp(comando, "HANDLE_CARD") == 0) {
             pthread_mutex_lock(&accesso_lavagna);
             handle_card();
             pthread_mutex_unlock(&accesso_lavagna);
             continue;
         }
+        /*Comando SEND_USER_LIST*/
         else if (strcmp(comando, "SEND_USER_LIST")==0) {
             pthread_mutex_lock(&accesso_lavagna);
             for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
@@ -795,6 +813,14 @@ void* gestione_utente(void* arg){
             if(ack_card(id, porta_utente) != 0){
                 const char *risposta = "Errore nell'ack della card.";
                 send_message(sd_utente, risposta);
+
+                /* Se l'ack fallisce, l'utente non deve essere visto come occupato */
+                for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
+                    if(lavagna->utenti_connessi[i].porta_utente == porta_utente){
+                        lavagna->utenti_connessi[i].occupato = 0;
+                        break;
+                    }
+                }
             }
             else {
                 const char *risposta = "Card acked con successo.";
@@ -900,7 +926,7 @@ int main(){
     /* Messa in ascolto della socket */
     listen(sd, MIN_UTENTI);
 
-    /*Creazione thread ascolto comandi lavagna*/
+    /* Creazione thread ascolto comandi lavagna */
     pthread_t thread_lavagna;
     if(pthread_create(&thread_lavagna, NULL, gestione_lavagna, NULL) != 0){
         perror("Errore nella creazione del thread per la lavagna");
@@ -909,7 +935,7 @@ int main(){
     }
     pthread_detach(thread_lavagna);
 
-    /*Creazione thread per PING_USER*/
+    /* Creazione thread per PING_USER */
     pthread_t thread_ping;
     if(pthread_create(&thread_ping, NULL, handler_ping_users, NULL) != 0){
         perror("Errore nella creazione del thread per il ping degli utenti");
@@ -917,6 +943,15 @@ int main(){
         exit(EXIT_FAILURE);
     }
     pthread_detach(thread_ping);
+
+    /* Creazione thread per invio status lavagna broadcast */
+    pthread_t thread_broadcast;
+    if(pthread_create(&thread_broadcast, NULL, lavagna_broadcast, NULL) != 0){
+        perror("Errore nella creazione del thread per il broadcast dello status della lavagna");
+        close(sd);
+        exit(EXIT_FAILURE);
+    }
+    pthread_detach(thread_broadcast);
 
     /* Accettazione connessioni in arrivo */
     while (1)

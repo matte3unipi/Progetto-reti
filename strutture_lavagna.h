@@ -44,3 +44,4 @@ struct st_LAVAGNA* lavagna = NULL;
 
 /*Semafori*/
 pthread_mutex_t accesso_lavagna;
+pthread_cond_t lavagna_aggiornata;
