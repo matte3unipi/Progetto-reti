@@ -98,18 +98,48 @@ void create_card_function(int sd) {
 
     char id_card_str[8];
     printf("Inserisci l'ID della nuova card: ");
-    scanf("%s", id_card_str);
+    if(fgets(id_card_str, sizeof(id_card_str), stdin) == NULL) {
+        perror("Errore nella lettura dell'ID della card");
+        return;
+    }
+    if(strchr(id_card_str, '\n') == NULL) {
+        printf("Errore: l'ID è troppo lungo (max 7 caratteri).\n");
+        int c;
+        while((c = getchar()) != '\n' && c != EOF);
+        return;
+    }
+    id_card_str[strcspn(id_card_str, "\n")] = 0;
 
     char colonna_card_str[8];
     printf("Inserisci la colonna della nuova card (TO_DO): ");
-    scanf("%s", colonna_card_str);
+    if(fgets(colonna_card_str, sizeof(colonna_card_str), stdin) == NULL) {
+        perror("Errore nella lettura della colonna della card");
+        return;
+    }
+    if(strchr(colonna_card_str, '\n') == NULL) {
+        printf("Errore: la colonna è troppo lunga (max 7 caratteri).\n");
+        int c;
+        while((c = getchar()) != '\n' && c != EOF);
+        return;
+    }
+    colonna_card_str[strcspn(colonna_card_str, "\n")] = 0;
 
     char testo_card_str[256];
     printf("Inserisci il testo attività della nuova card: ");
-    scanf(" %[^\n]", testo_card_str);
+    if(fgets(testo_card_str, sizeof(testo_card_str), stdin) == NULL) {
+        perror("Errore nella lettura del testo della card");
+        return;
+    }
+    if(strchr(testo_card_str, '\n') == NULL) {
+        printf("Errore: il testo è troppo lungo (max 255 caratteri).\n");
+        int c;
+        while((c = getchar()) != '\n' && c != EOF);
+        return;
+    }
+    testo_card_str[strcspn(testo_card_str, "\n")] = 0;
 
     char msg[300];
-    sprintf(msg, "CREATE_CARD:%s:%s:%s", id_card_str, colonna_card_str, testo_card_str);
+    snprintf(msg, sizeof(msg), "CREATE_CARD:%s:%s:%s", id_card_str, colonna_card_str, testo_card_str);
 
     if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio CREATE_CARD");
@@ -301,9 +331,9 @@ void handle_card_function(const char* msg) {
         token = strtok(NULL, ":");
         card_assegnata.porte_utenti[i] = atoi(token);
     }
-    printf("\nNuova card assegnata:\n");
-    printf("ID: %d\n", card_assegnata.id);
-    printf("Testo: %s\n", card_assegnata.testo);
+    printf("\n>>> Nuova card assegnata:\n");
+    printf("     # ID: %d\n", card_assegnata.id);
+    printf("     # Testo: %s\n\n", card_assegnata.testo);
     return;
 }
 
@@ -371,7 +401,7 @@ void print_lavagna(const char* msg) {
     }
     
     /* Stampa */
-    printf("----------------------------------------------------------------\n");
+    printf("\n----------------------------------------------------------------\n");
     printf("|                         Lavagna - %d                          |\n", id_lavagna);
     printf("----------------------------------------------------------------\n");
     printf("|        TO DO       |        DOING       |        DONE        |\n");
@@ -420,7 +450,7 @@ void print_lavagna(const char* msg) {
                 }
             }
         }
-        printf("----------------------------------------------------------------\n");
+        printf("----------------------------------------------------------------\n\n");
     }
 }
 
@@ -640,7 +670,7 @@ void* gestione_ascolto(void* arg) {
         /* Risposta al ping */
         else if(strncmp(buffer, "PING", 4) == 0){
             ping_ricevuto = 1;
-            printf("PING ricevuto dalla lavagna.\n");
+            printf(">>> PING ricevuto dalla lavagna.\n");
             continue;
         }
         /* SHOW_LAVAGNA */
@@ -734,8 +764,18 @@ int main(int argc, char *argv[]) {
     char comando[20];
 
     while (connessione_attiva){        
-        printf("Inserisci il comando\n");
-        scanf("%s", comando);
+        printf("Inserisci il comando:\n");
+        if(fgets(comando, sizeof(comando), stdin) == NULL) {
+            perror("Errore nella lettura del comando");
+            continue;
+        }
+        if(strchr(comando, '\n') == NULL) {
+            printf("Errore: il comando è troppo lungo (max 19 caratteri).\n");
+            int c;
+            while((c = getchar()) != '\n' && c != EOF);
+            continue;
+        }
+        comando[strcspn(comando, "\n")] = 0;
 
         printf(RIGA_SEPARATORIA);
 

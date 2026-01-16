@@ -684,7 +684,16 @@ void* gestione_lavagna(void* arg){
     char comando[50];
 
     while(1){
-        fgets(comando, sizeof(comando), stdin);
+        if(fgets(comando, sizeof(comando), stdin) == NULL) {
+            printf("Errore nella lettura del comando.\n");
+            continue;
+        }
+        if(strchr(comando, '\n') == NULL) {
+            printf("Errore: il comando è troppo lungo (max 49 caratteri).\n");
+            int c;
+            while((c = getchar()) != '\n' && c != EOF);
+            continue;
+        }
         comando[strcspn(comando, "\n")] = 0; 
 
         /*Gestione comandi*/
@@ -739,7 +748,7 @@ void* gestione_utente(void* arg){
             printf("Connessione utente sulla porta %d interrotta.\n", porta_utente);
             rimozione_utente(porta_utente);
             close(sd_utente);
-            return NULL;
+            break;
         }
 
         printf(RIGA_SEPARATORIA);
@@ -966,6 +975,7 @@ int main(){
         }
         printf("Connessione accettata da un utente.\n");
 
+        /* Creazione thread per la gestione dell'utente */
         pthread_t td;
         if(pthread_create(&td, NULL, gestione_utente, (void *)(intptr_t)new_socket) != 0){
             perror("Errore nella creazione del thread per l'utente");
