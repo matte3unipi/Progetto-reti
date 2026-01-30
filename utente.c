@@ -31,7 +31,7 @@ void hello_function(int sd) {
     }
 
     char msg[20];
-    sprintf(msg, "HELLO:%d", porta_utente);
+    sprintf(msg, "HELLO%s%d", CARATTERE_SEPARATORE, porta_utente);
 
     if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio HELLO");
@@ -74,6 +74,11 @@ Funzione per gestire il comando SHOW_LAVAGNA
     @param sd: socket
 */
 void show_lavagna_function(int sd) {
+    if(!hello_eseguito) {
+        printf("Non sei connesso alla lavagna, esegui il comando HELLO.\n");
+        return;
+    }
+
     char msg[] = "SHOW_LAVAGNA";
     if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio SHOW_LAVAGNA");
@@ -136,10 +141,16 @@ void create_card_function(int sd) {
         while((c = getchar()) != '\n' && c != EOF);
         return;
     }
+    /* Controllo l'inserimento del carattere separatore*/
+    if(strstr(testo_card_str, CARATTERE_SEPARATORE) != NULL) {
+        printf("Errore: il carattere '%s' non è consentito nel testo.\n", CARATTERE_SEPARATORE);
+        return;
+    }
     testo_card_str[strcspn(testo_card_str, "\n")] = 0;
 
     char msg[300];
-    snprintf(msg, sizeof(msg), "CREATE_CARD:%s:%s:%s", id_card_str, colonna_card_str, testo_card_str);
+    snprintf(msg, sizeof(msg), "CREATE_CARD%s%s%s%s%s%s", CARATTERE_SEPARATORE, id_card_str, 
+    CARATTERE_SEPARATORE, colonna_card_str, CARATTERE_SEPARATORE, testo_card_str);
 
     if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio CREATE_CARD");
@@ -188,7 +199,7 @@ void ack_card_function(int sd) {
     }
 
     char msg[50];
-    sprintf(msg, "ACK_CARD:%d", card_assegnata.id);
+    sprintf(msg, "ACK_CARD%s%d", CARATTERE_SEPARATORE, card_assegnata.id);
     if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio ACK_CARD");
         exit(EXIT_FAILURE);
@@ -223,7 +234,7 @@ void card_done_function(int sd) {
     }
 
     char msg[50];
-    sprintf(msg, "CARD_DONE:%d", card_assegnata.id);
+    sprintf(msg, "CARD_DONE%s%d", CARATTERE_SEPARATORE, card_assegnata.id);
     if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio CARD_DONE");
         exit(EXIT_FAILURE);
@@ -283,7 +294,7 @@ void save_user_list(const char* msg) {
     char lista_copia[1024];
     strncpy(lista_copia, msg, sizeof(lista_copia));
     lista_copia[sizeof(lista_copia) - 1] = '\0';    
-    char *token = strtok(lista_copia, ":");
+    char *token = strtok(lista_copia, CARATTERE_SEPARATORE);
     card_assegnata.num_utenti = atoi(token);
     card_assegnata.review_ricevute = 0;
 
@@ -292,7 +303,7 @@ void save_user_list(const char* msg) {
     }
     card_assegnata.porte_utenti = malloc(card_assegnata.num_utenti * sizeof(int));
     for(int i = 0; i < card_assegnata.num_utenti; i++) {
-        token = strtok(NULL, ":");
+        token = strtok(NULL, CARATTERE_SEPARATORE);
         card_assegnata.porte_utenti[i] = atoi(token);
     }
     printf("Lista utenti salvata\n");
@@ -309,12 +320,12 @@ void handle_card_function(const char* msg) {
     strncpy(testo_card, msg, sizeof(testo_card) - 1);
     testo_card[sizeof(testo_card) - 1] = '\0';
 
-    char* token = strtok(testo_card, ":");
+    char* token = strtok(testo_card, CARATTERE_SEPARATORE);
     card_assegnata.id = atoi(token);
-    token = strtok(NULL, ":");
+    token = strtok(NULL, CARATTERE_SEPARATORE);
     strncpy(card_assegnata.testo, token, sizeof(card_assegnata.testo) - 1);
     card_assegnata.testo[sizeof(card_assegnata.testo) - 1] = '\0';
-    token = strtok(NULL, ":");
+    token = strtok(NULL, CARATTERE_SEPARATORE);
     card_assegnata.num_utenti = atoi(token);
     card_assegnata.review_ricevute = 0;
     card_assegnata.card_done_inviata = 0;
@@ -329,7 +340,7 @@ void handle_card_function(const char* msg) {
     }
 
     for(int i = 0; i < card_assegnata.num_utenti; i++) {
-        token = strtok(NULL, ":");
+        token = strtok(NULL, CARATTERE_SEPARATORE);
         card_assegnata.porte_utenti[i] = atoi(token);
     }
     printf("\n>>> Nuova card assegnata:\n");
@@ -343,16 +354,24 @@ void print_lavagna(const char* msg) {
     strncpy(msg_copia, msg, sizeof(msg_copia) - 1);
     msg_copia[sizeof(msg_copia) - 1] = '\0';
     
-    /* Formato: LAVAGNA_STATE:id_lavagna|max_cards|card1_col1:card2_col1:...|card1_col2:card2_col2...| */
+    /* Formato: LAVAGNA_STATE|id_lavagna|max_cards||card1_col1|card2_col1|...||card1_col2|card2_col2...|| */
     char *ptr = msg_copia;
 
     /* Estraggo l'id della lavagna */
+    char* s_id = strstr(ptr, CARATTERE_SEPARATORE);
+    if(!s_id) 
+        return;
+    *s_id = '\0';
     int id_lavagna = atoi(ptr);
-    ptr = strchr(ptr, '|') + 1;
+    ptr = s_id + strlen(CARATTERE_SEPARATORE);
     
     /* Estraggo max_cards */
+    char* s_max = strstr(ptr, CARATTERE_SEPARATORE);
+    if(!s_max) 
+        return;
+    *s_max = '\0';
     int max_cards = atoi(ptr);
-    ptr = strchr(ptr, '|') + 1; 
+    ptr = s_max + strlen(CARATTERE_SEPARATORE) + strlen(CARATTERE_SEPARATORE);
     
     /* Array per memorizzare le card di ogni colonna */
     struct {
@@ -361,44 +380,60 @@ void print_lavagna(const char* msg) {
     } cards[3][100];
     int card_count[3] = {0};
     
+
     /* Parse card da ogni colonna */
     for(int col_idx = 0; col_idx < 3; col_idx++) {
-        /* Trovo il prossimo | che separa le colonne */
-        char *col_end = strchr(ptr, '|');
+        /* Trovo il prossimo || che separa le colonne */
+        char *col_end = strstr(ptr, CARATTERE_SEPARATORE CARATTERE_SEPARATORE);
         if(!col_end) 
             col_end = ptr + strlen(ptr);  /* Fine stringa */
         
         /* Se col_end != ptr, c'è almeno una card */
         if(col_end != ptr) {
-            /* Copio i dati della colonna */
-            char col_data[4096];
-            strncpy(col_data, ptr, col_end - ptr);
-            col_data[col_end - ptr] = '\0';
-            
-            /* Divido per : per ottenere le singole card */
-            char *card_ptr = strtok(col_data, ":");
-            while(card_ptr != NULL) {
-                if(strlen(card_ptr) > 0) {
-                    /* Parse id,testo */
-                    char card_entry[512];
-                    strncpy(card_entry, card_ptr, sizeof(card_entry) - 1);
-                    card_entry[sizeof(card_entry) - 1] = '\0';
-                    
-                    char *comma = strchr(card_entry, ',');
-                    if(comma) {
-                        *comma = '\0';
-                        cards[col_idx][card_count[col_idx]].id = atoi(card_entry);
-                        strncpy(cards[col_idx][card_count[col_idx]].testo, comma + 1, 255);
-                        cards[col_idx][card_count[col_idx]].testo[255] = '\0';
-                        card_count[col_idx]++;
-                    }
+            char *card_start = ptr;
+
+             /* Parsing manuale -> leggo coppie id|testo fino a || */
+            while(card_start < col_end) {
+                /* Salta eventuali | iniziali */
+                while(*card_start == '|' && card_start < col_end) card_start++;
+                if(card_start >= col_end) break;
+
+                /* ID */
+                char *sep1 = strchr(card_start, '|');
+                if(!sep1 || sep1 >= col_end) break;
+
+                *sep1 = '\0';
+                int card_id = atoi(card_start);
+                char *testo_start = sep1 + 1;
+
+                /* Testo */
+                char *sep2 = strchr(testo_start, '|');
+                char testo[256];
+
+                if(sep2 && sep2 < col_end) {
+                    /* C'è un'altra card dopo */
+                    strncpy(testo, testo_start, sep2 - testo_start);
+                    testo[sep2 - testo_start] = '\0';
+                    card_start = sep2 + 1;
+                } else {
+                    /* Ultima card della colonna */
+                    int len = col_end - testo_start;
+                    strncpy(testo, testo_start, len);
+                    testo[len] = '\0';
+                    card_start = col_end;
                 }
-                card_ptr = strtok(NULL, ":");
+
+                /* Salva card */
+                cards[col_idx][card_count[col_idx]].id = card_id;
+                strncpy(cards[col_idx][card_count[col_idx]].testo, testo, 255);
+                cards[col_idx][card_count[col_idx]].testo[255] = '\0';
+                card_count[col_idx]++;
             }
         }
-        
+
         ptr = col_end;
-        if(*ptr == '|') ptr++;  /* Salto il separatore di colonna */
+        /* Salto il separatore di colonna || */
+        if(*ptr == '|' && *(ptr + 1) == '|') ptr += 2;
     }
     
     /* Stampa */
@@ -501,7 +536,7 @@ void* gestione_p2p_review(void* arg) {
     }
     /* Invio della review */
     char review_msg[64];
-    sprintf(review_msg, "REVIEW_CARD:%d", card_assegnata.id);
+    sprintf(review_msg, "REVIEW_CARD%s%d", CARATTERE_SEPARATORE, card_assegnata.id);
     if(send_message(sd_p2p, review_msg) < 0) {
         perror("Errore nell'invio della REVIEW_CARD");
         close(sd_p2p);
@@ -619,13 +654,16 @@ void* server_p2p(void* arg) {
 
         /* Ricevi REVIEW_CARD */
         if(recv_message(sd_client, buffer, sizeof(buffer)) > 0) {
-            if(strncmp(buffer, "REVIEW_CARD:", 12) == 0) {
+            if(strncmp(buffer, "REVIEW_CARD|", 12) == 0) {
+                printf("REVIEW_CARD della card ID %s ricevuta.\n", buffer + 13);
+                printf("Inviando ACK_REVIEW_CARD...\n");
                 
                 /* Invio ACK_REVIEW_CARD */
                 char ack_msg[] = "ACK_REVIEW_CARD";
                 if(send_message(sd_client, ack_msg) < 0) {
                     perror("Errore nell'invio dell'ACK_REVIEW_CARD");
                 }
+                printf("ACK_REVIEW_CARD inviato.\n");
                 close(sd_client);
             }
         }
@@ -663,12 +701,12 @@ void* gestione_ascolto(void* arg) {
             card_assegnata.id = -1;  /* Reset card assegnata */
         }
         /* Lista utenti ricevuta */
-        else if (strncmp(buffer, "SEND_USER_LIST:", 15) == 0) {
+        else if (strncmp(buffer, "SEND_USER_LIST", 14) == 0) {
             save_user_list(buffer + 15);
             continue;
         }
         /* Nuova card assegnata */
-        else if(strncmp(buffer,"HANDLE_CARD:",12)==0){
+        else if(strncmp(buffer,"HANDLE_CARD",11)==0){
             handle_card_function(buffer + 12);
             continue;
         }
@@ -679,7 +717,7 @@ void* gestione_ascolto(void* arg) {
             continue;
         }
         /* SHOW_LAVAGNA */
-        else if(strncmp(buffer, "LAVAGNA_STATE:",14) == 0){
+        else if(strncmp(buffer, "LAVAGNA_STATE",13) == 0){
             print_lavagna(buffer + 14);
             continue;
         }

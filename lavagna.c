@@ -248,14 +248,14 @@ int create_card(const char* dati, int porta_utente){
     card_copia[sizeof(card_copia) - 1] = '\0';
 
     /* Estraggo i campi della card */
-    char *elem = strtok(card_copia, ":");
+    char *elem = strtok(card_copia, CARATTERE_SEPARATORE);
     int id_card = atoi(elem);
-    elem = strtok(NULL, ":");
+    elem = strtok(NULL, CARATTERE_SEPARATORE);
     STATO_COLONNA colonna = controllo_stato(elem);
     if(colonna == -1){
         return -1;
     }
-    elem = strtok(NULL, ":");
+    elem = strtok(NULL, CARATTERE_SEPARATORE);
     char *testo = elem;
 
     /*Verifico che l'id della card non sia già presente nella Lavagna*/
@@ -416,7 +416,7 @@ int send_user_list(int sd, int porta_destinatario){
     /*Inserisco numero utenti (meno 1 del destinatario)*/
     int pos = 0;
     
-    pos += snprintf(lista + pos, sizeof(lista) - pos, "SEND_USER_LIST:%d", 
+    pos += snprintf(lista + pos, sizeof(lista) - pos, "SEND_USER_LIST%s%d", CARATTERE_SEPARATORE, 
                     lavagna->numero_utenti_connessi - 1);
     
 
@@ -425,7 +425,7 @@ int send_user_list(int sd, int porta_destinatario){
         if(lavagna->utenti_connessi[i].porta_utente == porta_destinatario){
             continue;
         }
-        pos += snprintf(lista + pos, sizeof(lista) - pos, ":%d", 
+        pos += snprintf(lista + pos, sizeof(lista) - pos, "%s%d", CARATTERE_SEPARATORE,
                         lavagna->utenti_connessi[i].porta_utente);
     }
 
@@ -447,10 +447,10 @@ int send_show_lavagna(int sd_utente){
     char msg[8192];
     int pos = 0;
 
-    /* Formato: LAVAGNA_STATE:id_lavagna|max_cards|card1_col1:card2_col1:...|card1_col2:card2_col2...| */
+    /* Formato: LAVAGNA_STATE|id_lavagna|max_cards||card1_col1|card2_col1|...||card1_col2|card2_col2...|| */
 
     /* Aggiungo id lavagna */
-    pos += sprintf(msg + pos, "LAVAGNA_STATE:%d|", lavagna->id);
+    pos += sprintf(msg + pos, "LAVAGNA_STATE%s%d%s", CARATTERE_SEPARATORE, lavagna->id, CARATTERE_SEPARATORE);
     
     int max_cards = 0;
     for(int i = 0; i < NUM_COLONNE; i++){
@@ -460,21 +460,24 @@ int send_show_lavagna(int sd_utente){
     }
     
     /* Aggiungo numero massimo di card */
-    pos += sprintf(msg + pos, "%d|", max_cards);
+    pos += sprintf(msg + pos, "%d%s%s", max_cards, CARATTERE_SEPARATORE, CARATTERE_SEPARATORE);
     
     for(int col = 0; col < NUM_COLONNE; col++){
-        for(int i = 0; i < max_cards; i++){
-            if(i < lavagna->colonne[col].numero_card){
-                struct st_CARD card = lavagna->colonne[col].cards[i];
-                /* Aggiungo id e testo della card */
-                pos += sprintf(msg + pos, "%d,%s", card.id, card.testo);
+        int cards_scritte = 0;
+        
+        for(int i = 0; i < lavagna->colonne[col].numero_card; i++){ 
+            struct st_CARD card = lavagna->colonne[col].cards[i];
+
+            if(cards_scritte > 0){
+                pos += sprintf(msg + pos, "%s", CARATTERE_SEPARATORE);
             }
-            if(i < max_cards - 1){
-                pos += sprintf(msg + pos, ":");
-            }
+
+            pos += sprintf(msg + pos, "%d%s%s", card.id, CARATTERE_SEPARATORE, card.testo);
+            cards_scritte++;
         }
         if(col < NUM_COLONNE - 1){
-            pos += sprintf(msg + pos, "|");
+            /* Inserisco || per separare le colonne */
+            pos += sprintf(msg + pos, "%s%s", CARATTERE_SEPARATORE, CARATTERE_SEPARATORE);
         }
     }
 
@@ -505,13 +508,13 @@ void handle_card(){
                 int num_utenti_escl = lavagna->numero_utenti_connessi - 1;
                 
                 /* Inizio messaggio con ID, testo e numero utenti */
-                off += sprintf(msg, "HANDLE_CARD:%d:%s:%d", 
-                    card_selezionata.id, card_selezionata.testo, num_utenti_escl);
+                off += sprintf(msg, "HANDLE_CARD%s%d%s%s%s%d", CARATTERE_SEPARATORE,
+                    card_selezionata.id, CARATTERE_SEPARATORE, card_selezionata.testo, CARATTERE_SEPARATORE, num_utenti_escl);
                 
                 /* Aggiungo lista porte (escludendo il destinatario alla posizione j) */
                 for(int k = 0; k < lavagna->numero_utenti_connessi; k++){
                     if(k != j){
-                        off += sprintf(msg + off, ":%d", lavagna->utenti_connessi[k].porta_utente);
+                        off += sprintf(msg + off, "%s%d", CARATTERE_SEPARATORE, lavagna->utenti_connessi[k].porta_utente);
                     }
                 }
                 
@@ -767,7 +770,7 @@ void* gestione_lavagna(void* arg){
 
 void* gestione_utente(void* arg){
     int sd_utente = (int)(intptr_t)arg;
-    char buffer[1024];
+    char buffer[512];
     int porta_utente = 0;
 
     /*Arrivo comandi da parte dell'utente*/
@@ -785,7 +788,7 @@ void* gestione_utente(void* arg){
 
         /*Gestione comandi*/
         /*Comando HELLO*/
-        if (strncmp(buffer, "HELLO:", 6) == 0) {
+        if (strncmp(buffer, "HELLO", 5) == 0) {
             porta_utente = atoi(&buffer[6]);
 
             pthread_mutex_lock(&accesso_lavagna);
@@ -826,7 +829,7 @@ void* gestione_utente(void* arg){
         }
 
         /*Comando CREATE_CARD*/
-        else if (strncmp(buffer, "CREATE_CARD:", 12) == 0){
+        else if (strncmp(buffer, "CREATE_CARD", 11) == 0){
             printf("%d>>> Comando CREATE_CARD ricevuto.\n", porta_utente);
 
             pthread_mutex_lock(&accesso_lavagna);
@@ -843,7 +846,7 @@ void* gestione_utente(void* arg){
         }
 
         /*Comando ACK_CARD*/
-        else if(strncmp(buffer, "ACK_CARD:", 9) == 0){
+        else if(strncmp(buffer, "ACK_CARD", 8) == 0){
             printf("%d>>> Comando ACK_CARD ricevuto.\n", porta_utente);
 
             int id = atoi(buffer + 9);
@@ -883,7 +886,7 @@ void* gestione_utente(void* arg){
         }
 
         /*Comando CARD_DONE*/
-        else if(strncmp(buffer, "CARD_DONE:",10) == 0){
+        else if(strncmp(buffer, "CARD_DONE", 9) == 0){
             printf("%d>>> Comando CARD_DONE ricevuto.\n", porta_utente);
 
             int id = atoi(buffer + 10);

@@ -3,7 +3,7 @@
 #define NUM_COLONNE 3
 #define MIN_UTENTI 10
 #define RIGA_SEPARATORIA "<----------------------------------------\n"
-#define CARATTERE_SEPARATORE '|'
+#define CARATTERE_SEPARATORE "|"
 
 /*Strutture*/
 typedef enum {

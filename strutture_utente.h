@@ -1,6 +1,7 @@
 /*Definizioni*/
 #define PORTA_LAVAGNA 5678
 #define RIGA_SEPARATORIA "<----------------------------------------\n"
+#define CARATTERE_SEPARATORE "|"
 
 /*Dati utili per il codice*/
 volatile int hello_eseguito = 0;
