@@ -10,13 +10,19 @@ int send_message(int sd, const char *msg) {
     unsigned short msg_len_network = htons(msg_len);
     
     /* Invio la lunghezza del messaggio */
-    if (send(sd, &msg_len_network, sizeof(msg_len_network), 0) < 0) {
-        return -1;
+    int sent = 0;
+    while(sent < sizeof(msg_len_network)) {
+        int ret = send(sd, ((char*)&msg_len_network) + sent, sizeof(msg_len_network) - sent, 0);
+        if(ret <= 0) return -1;
+        sent += ret;
     }
     
     /* Invio il messaggio */
-    if (send(sd, msg, msg_len, 0) < 0) {
-        return -1;
+    sent = 0;
+    while(sent < msg_len) {
+        int ret = send(sd, msg + sent, msg_len - sent, 0);
+        if(ret <= 0) return -1;
+        sent += ret;
     }
     
     return 0;
@@ -27,22 +33,28 @@ int recv_message(int sd, char *buffer, int max_len) {
     unsigned short msg_len_network;
     
     /* Ricevo la lunghezza del messaggio */
-    if (recv(sd, &msg_len_network, sizeof(msg_len_network), 0) <= 0) {
-        return -1;
+    int received = 0;
+    while(received < sizeof(msg_len_network)) {
+        int ret = recv(sd, ((char*)&msg_len_network) + received, sizeof(msg_len_network) - received, 0);
+        if(ret <= 0) return -1;
+        received += ret;
     }
     
     unsigned short msg_len = ntohs(msg_len_network);
     
-    if (msg_len >= max_len) {
+    if(msg_len >= max_len) {
         printf("Errore: messaggio troppo grande\n");
         return -1;
     }
     
     /* Ricevo il messaggio */
-    int bytes_letti = recv(sd, buffer, msg_len, 0);
-    if (bytes_letti != msg_len) {
-        return -1;
+    received = 0;
+    while(received < msg_len) {
+        int ret = recv(sd, buffer + received, msg_len - received, 0);
+        if(ret <= 0) return -1;
+        received += ret;
     }
-    buffer[bytes_letti] = '\0';
-    return bytes_letti;
+    
+    buffer[received] = '\0';
+    return received;
 }

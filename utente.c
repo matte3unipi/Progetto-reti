@@ -256,6 +256,7 @@ void pong_lavagna_function(int sd) {
         perror("Errore durante l'invio del messaggio PONG_LAVAGNA");
         exit(EXIT_FAILURE);
     } else {
+        printf("PONG inviato.\n");
         ping_ricevuto = 0;
     }
 
@@ -450,8 +451,11 @@ void print_lavagna(const char* msg) {
                 }
             }
         }
-        printf("----------------------------------------------------------------\n\n");
+        printf("----------------------------------------------------------------\n");
     }
+
+    printf("\n");
+    return;
 }
 
 
@@ -556,7 +560,8 @@ void review_card_function(int sd) {
         pthread_detach(p2p_socket);
     }
 
-    sleep(2);
+    int tempo_attesa = (card_assegnata.num_utenti / 2) + 1;
+    sleep(tempo_attesa);
 
     if(card_assegnata.review_ricevute == card_assegnata.num_utenti) {
         printf("REVIEW_CARD ricevute.\n");
@@ -670,7 +675,7 @@ void* gestione_ascolto(void* arg) {
         /* Risposta al ping */
         else if(strncmp(buffer, "PING", 4) == 0){
             ping_ricevuto = 1;
-            printf(">>> PING ricevuto dalla lavagna.\n");
+            printf("\n>>> PING ricevuto dalla lavagna.\n\n");
             continue;
         }
         /* SHOW_LAVAGNA */
