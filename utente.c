@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <errno.h>
 #include "funzioni_x_msg.h"
 #include "strutture_utente.h"
 
@@ -101,6 +102,9 @@ void create_card_function(int sd) {
 
     printf(" > Creazione nuova card < \n");
 
+    /* Per ogni campo verifico che i caratteri inseriti non superino 
+    il limite massimo consentito.*/
+
     char id_card_str[8];
     printf("Inserisci l'ID della nuova card: ");
     if(fgets(id_card_str, sizeof(id_card_str), stdin) == NULL) {
@@ -193,6 +197,11 @@ void ack_card_function(int sd) {
         return;
     }
 
+    if(card_assegnata.ack_card_inviata == 1) {
+        printf("Hai già inviato il comando ACK_CARD per questa card.\n");
+        return;
+    }
+
     if(card_assegnata.id < 0) {
         printf("Non hai nessuna card assegnata.\n");
         return;
@@ -205,6 +214,7 @@ void ack_card_function(int sd) {
         exit(EXIT_FAILURE);
     } else {
         printf("Comando ACK_CARD eseguito per la card ID %d.\n", card_assegnata.id);
+        card_assegnata.ack_card_inviata = 1;
     }
 }
 
@@ -312,7 +322,7 @@ void save_user_list(const char* msg) {
 
 /*
 Funzione per gestire l'arrivo di una card
-    @param msg: dati card id:testo:porte utenti
+    @param msg: dati card id|testo|porte utenti
 */
 void handle_card_function(const char* msg) {
     /* Copio il messaggio per lavorare*/
@@ -320,6 +330,7 @@ void handle_card_function(const char* msg) {
     strncpy(testo_card, msg, sizeof(testo_card) - 1);
     testo_card[sizeof(testo_card) - 1] = '\0';
 
+    /* Estraggo i dati della card */
     char* token = strtok(testo_card, CARATTERE_SEPARATORE);
     card_assegnata.id = atoi(token);
     token = strtok(NULL, CARATTERE_SEPARATORE);
@@ -329,7 +340,9 @@ void handle_card_function(const char* msg) {
     card_assegnata.num_utenti = atoi(token);
     card_assegnata.review_ricevute = 0;
     card_assegnata.card_done_inviata = 0;
+    card_assegnata.ack_card_inviata = 0;
 
+    /* Verifico se ho in memoria già allocato porte utenti (potrebbero essere non piu utilizzate alcune)*/
     if(card_assegnata.porte_utenti != NULL) {
         free(card_assegnata.porte_utenti);
     }
@@ -343,6 +356,8 @@ void handle_card_function(const char* msg) {
         token = strtok(NULL, CARATTERE_SEPARATORE);
         card_assegnata.porte_utenti[i] = atoi(token);
     }
+
+    /* Stampo a schermo i dati essenziali della card */
     printf("\n>>> Nuova card assegnata:\n");
     printf("     # ID: %d\n", card_assegnata.id);
     printf("     # Testo: %s\n\n", card_assegnata.testo);
@@ -371,19 +386,19 @@ void print_lavagna(const char* msg) {
         return;
     *s_max = '\0';
     int max_cards = atoi(ptr);
-    ptr = s_max + strlen(CARATTERE_SEPARATORE) + strlen(CARATTERE_SEPARATORE);
+    ptr = s_max + strlen(CARATTERE_SEPARATORE) + strlen(CARATTERE_SEPARATORE); // Salto il secondo separatore
     
     /* Array per memorizzare le card di ogni colonna */
     struct {
         int id;
         char testo[256];
-    } cards[3][100];
+    } cards[3][50];
     int card_count[3] = {0};
     
 
     /* Parse card da ogni colonna */
     for(int col_idx = 0; col_idx < 3; col_idx++) {
-        /* Trovo il prossimo || che separa le colonne */
+        /* Trovo la posizione del prossimo || che separa le colonne */
         char *col_end = strstr(ptr, CARATTERE_SEPARATORE CARATTERE_SEPARATORE);
         if(!col_end) 
             col_end = ptr + strlen(ptr);  /* Fine stringa */
@@ -396,6 +411,8 @@ void print_lavagna(const char* msg) {
             while(card_start < col_end) {
                 /* Salta eventuali | iniziali */
                 while(*card_start == '|' && card_start < col_end) card_start++;
+
+                /* Controllo fine colonna */
                 if(card_start >= col_end) break;
 
                 /* ID */
@@ -412,8 +429,9 @@ void print_lavagna(const char* msg) {
 
                 if(sep2 && sep2 < col_end) {
                     /* C'è un'altra card dopo */
-                    strncpy(testo, testo_start, sep2 - testo_start);
-                    testo[sep2 - testo_start] = '\0';
+                    int len = sep2 - testo_start;
+                    strncpy(testo, testo_start, len);
+                    testo[len] = '\0';
                     card_start = sep2 + 1;
                 } else {
                     /* Ultima card della colonna */
@@ -530,7 +548,11 @@ void* gestione_p2p_review(void* arg) {
     }
     /* Connessione al destinatario */
     if(connect(sd_p2p, (struct sockaddr *)&addr_destinatario, sizeof(addr_destinatario)) < 0) {
-        perror("Errore nella connessione P2P");
+        if(errno == ECONNREFUSED) {
+            fprintf(stderr, "Connessione rifiutata dalla porta %d.\n", porta_destinatario);
+        } else {
+            printf("Errore nella connessione P2P.\n");
+        }
         close(sd_p2p);
         return NULL;
     }
@@ -552,6 +574,7 @@ void* gestione_p2p_review(void* arg) {
         return NULL;
     }
     if(strncmp(ack, "ACK_REVIEW_CARD", 15) == 0) {
+        /* Essendo che ci sono più thread che possono modificare review_ricevute, uso un mutex */
         pthread_mutex_lock(&ascolto);
         card_assegnata.review_ricevute++;
         pthread_mutex_unlock(&ascolto);
@@ -576,7 +599,7 @@ void review_card_function(int sd) {
         return;
     }
 
-    /* Richiedo la lista degli utenti connessi */
+    /* Richiedo la lista degli utenti connessi (per evitare di avere in memoria dati obsoleti)*/
     request_user_list_function(sd);
     sleep(1);  /* Attendo che la lista venga salvata */
 
@@ -587,6 +610,7 @@ void review_card_function(int sd) {
 
     card_assegnata.review_ricevute = 0;
 
+    /* Invio REVIEW_CARD a tutti gli utenti connessi attraverso thread*/
     for(int i = 0; i < card_assegnata.num_utenti; i++) {
         int porta_destinatario = card_assegnata.porte_utenti[i];
 
@@ -595,6 +619,7 @@ void review_card_function(int sd) {
         pthread_detach(p2p_socket);
     }
 
+    /* Attendo un tempo proporzionale al numero utenti */
     int tempo_attesa = (card_assegnata.num_utenti / 2) + 1;
     sleep(tempo_attesa);
 
@@ -620,6 +645,7 @@ void* server_p2p(void* arg) {
     sd_server = socket(AF_INET, SOCK_STREAM, 0);
     if(sd_server < 0) {
         perror("Errore nella creazione socket server P2P");
+        connessione_attiva = 0;
         return NULL;
     }
 
@@ -629,18 +655,26 @@ void* server_p2p(void* arg) {
     addr_server.sin_port = htons(porta_utente);
     if(inet_pton(AF_INET, "127.0.0.1", &addr_server.sin_addr) <= 0) {
         perror("Errore nella conversione dell'indirizzo IP server P2P");
+        connessione_attiva = 0;
         close(sd_server);
         return NULL;
     }
 
     /* Binding del socket server P2P */
     if(bind(sd_server, (struct sockaddr *)&addr_server, sizeof(addr_server)) < 0) {
-        perror("Errore nel bind server P2P");
+        if(errno == EADDRINUSE){
+            fprintf(stderr,"Errore: la porta %d è già in uso.\n", porta_utente);
+        }
+        else {
+            perror("Errore nel binding del socket server P2P");
+        }
+        connessione_attiva = 0;
         close(sd_server);
+        exit(EXIT_FAILURE);
         return NULL;
     }
 
-    listen(sd_server, 5);
+    listen(sd_server, 10);
 
     char buffer[64];
 
@@ -648,14 +682,13 @@ void* server_p2p(void* arg) {
         /* Accetto connessione in arrivo */
         if((sd_client = accept(sd_server, (struct sockaddr *)&addr_client, &len_client)) < 0) {
             perror("Errore nell'accept P2P");
-            close(sd_server);
-            return NULL;
+            break;
         }
 
         /* Ricevi REVIEW_CARD */
         if(recv_message(sd_client, buffer, sizeof(buffer)) > 0) {
             if(strncmp(buffer, "REVIEW_CARD|", 12) == 0) {
-                printf("REVIEW_CARD della card ID %s ricevuta.\n", buffer + 13);
+                printf("REVIEW_CARD della card ID %s ricevuta.\n", buffer + 12);
                 printf("Inviando ACK_REVIEW_CARD...\n");
                 
                 /* Invio ACK_REVIEW_CARD */
@@ -684,11 +717,15 @@ void* server_p2p(void* arg) {
 /*Thread per gestire i messaggi in arrivo dalla lavagna*/
 void* gestione_ascolto(void* arg) {
     int sd = (int)(intptr_t)arg;
-    char buffer[1024];
+    char buffer[8192];
     
     while(1) {
         if(recv_message(sd, buffer, sizeof(buffer) - 1) <= 0) {
-            printf("Connessione chiusa dalla lavagna.\n");
+            if(errno == ECONNRESET) {
+                fprintf(stderr, "Connessione chiusa bruscamente dalla lavagna.\n");
+            } else {
+                printf("Connessione chiusa dalla lavagna.\n");
+            }
             connessione_attiva = 0;
             break;
         }
@@ -727,6 +764,7 @@ void* gestione_ascolto(void* arg) {
 
     }
     
+    close(sd);
     return NULL;
 }
 
@@ -765,7 +803,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    /* Creazione indirizzo utente*/
+    /* Creazione indirizzo*/
     memset(&lavagna_addr, 0, sizeof(lavagna_addr));
     lavagna_addr.sin_family = AF_INET;
     lavagna_addr.sin_port = htons(PORTA_LAVAGNA);
@@ -777,7 +815,12 @@ int main(int argc, char *argv[]) {
 
     /*Connessione alla lavagna*/
     if((ret = connect(sd, (struct sockaddr *)&lavagna_addr, sizeof(lavagna_addr))) < 0) {
-        perror("Errore nella connessione alla lavagna");
+        if(errno == ECONNREFUSED){
+            fprintf(stderr,"Lavagna non attiva. Aspettare che la lavagna venga avviata e riprovate.\n");
+        }
+        else {
+            perror("Errore nella connessione alla lavagna");
+        }
         close(sd);
         exit(EXIT_FAILURE);
     }
@@ -806,6 +849,7 @@ int main(int argc, char *argv[]) {
     /* Controllo che i comandi inseriti da tastiera siano quelli permessi.*/
     char comando[20];
 
+    sleep(1);
     while (connessione_attiva){        
         printf("Inserisci il comando:\n");
         if(fgets(comando, sizeof(comando), stdin) == NULL) {

@@ -6,13 +6,16 @@
 
 /* Invia messaggio con lunghezza prefissa */
 int send_message(int sd, const char *msg) {
+    if(msg == NULL) 
+        return -1;
+
     unsigned short msg_len = strlen(msg);
     unsigned short msg_len_network = htons(msg_len);
     
     /* Invio la lunghezza del messaggio */
     int sent = 0;
     while(sent < sizeof(msg_len_network)) {
-        int ret = send(sd, ((char*)&msg_len_network) + sent, sizeof(msg_len_network) - sent, 0);
+        int ret = send(sd, ((char*)&msg_len_network) + sent, sizeof(msg_len_network) - sent, MSG_NOSIGNAL);
         if(ret <= 0) return -1;
         sent += ret;
     }
@@ -20,7 +23,7 @@ int send_message(int sd, const char *msg) {
     /* Invio il messaggio */
     sent = 0;
     while(sent < msg_len) {
-        int ret = send(sd, msg + sent, msg_len - sent, 0);
+        int ret = send(sd, msg + sent, msg_len - sent, MSG_NOSIGNAL);
         if(ret <= 0) return -1;
         sent += ret;
     }
@@ -30,6 +33,9 @@ int send_message(int sd, const char *msg) {
 
 /* Ricevi messaggio con lunghezza prefissa */
 int recv_message(int sd, char *buffer, int max_len) {
+    if(buffer == NULL || max_len <= 0) 
+        return -1;
+
     unsigned short msg_len_network;
     
     /* Ricevo la lunghezza del messaggio */

@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <errno.h>
 #include "strutture_lavagna.h"
 #include "funzioni_x_msg.h"             // Per send_message e recv_message
 
@@ -238,7 +239,7 @@ void card_doing_check(int porta_utente){
 
 /*
 Funzione per la creazione di una nuova card
-    @param dati: stringa contenente i dati della card (id:colonna:testo)
+    @param dati: stringa contenente i dati della card (id|colonna|testo)
     @param porta_utente: porta dell'utente che crea la card
 */
 int create_card(const char* dati, int porta_utente){
@@ -390,7 +391,7 @@ int card_done(int id_card, int porta_utente){
         return -1;
     }
 
-    /*Una volta arrivato l'ack l'utente non è più occupato*/
+    /*Una volta arrivato l'utente non è più occupato*/
     for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
         if(lavagna->utenti_connessi[i].porta_utente == porta_utente){
             lavagna->utenti_connessi[i].occupato = 0;
@@ -450,7 +451,7 @@ int send_show_lavagna(int sd_utente){
     /* Formato: LAVAGNA_STATE|id_lavagna|max_cards||card1_col1|card2_col1|...||card1_col2|card2_col2...|| */
 
     /* Aggiungo id lavagna */
-    pos += sprintf(msg + pos, "LAVAGNA_STATE%s%d%s", CARATTERE_SEPARATORE, lavagna->id, CARATTERE_SEPARATORE);
+    pos += snprintf(msg + pos, sizeof(msg) - pos, "LAVAGNA_STATE%s%d%s", CARATTERE_SEPARATORE, lavagna->id, CARATTERE_SEPARATORE);
     
     int max_cards = 0;
     for(int i = 0; i < NUM_COLONNE; i++){
@@ -460,7 +461,7 @@ int send_show_lavagna(int sd_utente){
     }
     
     /* Aggiungo numero massimo di card */
-    pos += sprintf(msg + pos, "%d%s%s", max_cards, CARATTERE_SEPARATORE, CARATTERE_SEPARATORE);
+    pos += snprintf(msg + pos, sizeof(msg) - pos, "%d%s%s", max_cards, CARATTERE_SEPARATORE, CARATTERE_SEPARATORE);
     
     for(int col = 0; col < NUM_COLONNE; col++){
         int cards_scritte = 0;
@@ -469,15 +470,15 @@ int send_show_lavagna(int sd_utente){
             struct st_CARD card = lavagna->colonne[col].cards[i];
 
             if(cards_scritte > 0){
-                pos += sprintf(msg + pos, "%s", CARATTERE_SEPARATORE);
+                pos += snprintf(msg + pos, sizeof(msg) - pos, "%s", CARATTERE_SEPARATORE);
             }
 
-            pos += sprintf(msg + pos, "%d%s%s", card.id, CARATTERE_SEPARATORE, card.testo);
+            pos += snprintf(msg + pos, sizeof(msg) - pos, "%d%s%s", card.id, CARATTERE_SEPARATORE, card.testo);
             cards_scritte++;
         }
         if(col < NUM_COLONNE - 1){
             /* Inserisco || per separare le colonne */
-            pos += sprintf(msg + pos, "%s%s", CARATTERE_SEPARATORE, CARATTERE_SEPARATORE);
+            pos += snprintf(msg + pos, sizeof(msg) - pos, "%s%s", CARATTERE_SEPARATORE, CARATTERE_SEPARATORE);
         }
     }
 
@@ -508,13 +509,13 @@ void handle_card(){
                 int num_utenti_escl = lavagna->numero_utenti_connessi - 1;
                 
                 /* Inizio messaggio con ID, testo e numero utenti */
-                off += sprintf(msg, "HANDLE_CARD%s%d%s%s%s%d", CARATTERE_SEPARATORE,
+                off += snprintf(msg, sizeof(msg) - off, "HANDLE_CARD%s%d%s%s%s%d", CARATTERE_SEPARATORE,
                     card_selezionata.id, CARATTERE_SEPARATORE, card_selezionata.testo, CARATTERE_SEPARATORE, num_utenti_escl);
                 
                 /* Aggiungo lista porte (escludendo il destinatario alla posizione j) */
                 for(int k = 0; k < lavagna->numero_utenti_connessi; k++){
                     if(k != j){
-                        off += sprintf(msg + off, "%s%d", CARATTERE_SEPARATORE, lavagna->utenti_connessi[k].porta_utente);
+                        off += snprintf(msg + off, sizeof(msg) - off, "%s%d", CARATTERE_SEPARATORE, lavagna->utenti_connessi[k].porta_utente);
                     }
                 }
                 
@@ -777,7 +778,14 @@ void* gestione_utente(void* arg){
     while(1){
         /*Ricezione messaggio*/
         if(recv_message(sd_utente, buffer, sizeof(buffer)) < 0) {
-            printf("Connessione utente sulla porta %d interrotta.\n", porta_utente);
+            if(errno == ECONNRESET) {
+                fprintf(stderr, "Utente sulla porta %d ha chiuso bruscamente la connessione\n", porta_utente);
+            } else {
+                if(porta_utente != 0)
+                    printf("Connessione utente sulla porta %d interrotta.\n", porta_utente);
+                else
+                    printf("Connessione utente sconosciuto (non ha eseguito HELLO) interrotta.\n");
+            }
             rimozione_utente(porta_utente);
             close(sd_utente);
             break;
@@ -797,7 +805,7 @@ void* gestione_utente(void* arg){
                 send_message(sd_utente, risposta);
             }
             else{
-                printf("Utente alla porta %d registrato.\n", porta_utente);
+                printf("Utente alla porta %d registrato.\n\n", porta_utente);
                 const char *risposta = "Registrazione avvenuta con successo.";
                 send_message(sd_utente, risposta);
             }
@@ -813,14 +821,14 @@ void* gestione_utente(void* arg){
                 const char *risposta = "Errore nella visualizzazione della lavagna.";
                 send_message(sd_utente, risposta);
             }
-            printf("%d>>> Stato lavagna inviato con successo.\n", porta_utente);
+            printf("%d>>> Stato lavagna inviato con successo.\n\n", porta_utente);
             
             pthread_mutex_unlock(&accesso_lavagna);
         }
 
         /*Comando QUIT*/
         else if (strncmp(buffer, "QUIT", 4) == 0) {
-            printf("%d>>> Utente disconnesso.\n", porta_utente);
+            printf("%d>>> Utente disconnesso.\n\n", porta_utente);
             pthread_mutex_lock(&accesso_lavagna);
             rimozione_utente(porta_utente);
             pthread_mutex_unlock(&accesso_lavagna);
@@ -830,7 +838,7 @@ void* gestione_utente(void* arg){
 
         /*Comando CREATE_CARD*/
         else if (strncmp(buffer, "CREATE_CARD", 11) == 0){
-            printf("%d>>> Comando CREATE_CARD ricevuto.\n", porta_utente);
+            printf("%d>>> Comando CREATE_CARD ricevuto.\n\n", porta_utente);
 
             pthread_mutex_lock(&accesso_lavagna);
             if(create_card(buffer + 12, porta_utente) != 0){
@@ -847,7 +855,7 @@ void* gestione_utente(void* arg){
 
         /*Comando ACK_CARD*/
         else if(strncmp(buffer, "ACK_CARD", 8) == 0){
-            printf("%d>>> Comando ACK_CARD ricevuto.\n", porta_utente);
+            printf("%d>>> Comando ACK_CARD ricevuto.\n\n", porta_utente);
 
             int id = atoi(buffer + 9);
             pthread_mutex_lock(&accesso_lavagna);
@@ -879,7 +887,7 @@ void* gestione_utente(void* arg){
                 send_message(sd_utente, risposta);
             }
             else {
-                printf("%d>>> Lista utenti inviata con successo.\n", porta_utente);
+                printf("%d>>> Lista utenti inviata con successo.\n\n", porta_utente);
             }
 
             pthread_mutex_unlock(&accesso_lavagna);
@@ -887,7 +895,7 @@ void* gestione_utente(void* arg){
 
         /*Comando CARD_DONE*/
         else if(strncmp(buffer, "CARD_DONE", 9) == 0){
-            printf("%d>>> Comando CARD_DONE ricevuto.\n", porta_utente);
+            printf("%d>>> Comando CARD_DONE ricevuto.\n\n", porta_utente);
 
             int id = atoi(buffer + 10);
             pthread_mutex_lock(&accesso_lavagna);
@@ -906,13 +914,13 @@ void* gestione_utente(void* arg){
             pthread_mutex_unlock(&accesso_lavagna);
         }
 
-        /*Comando PONG + gestione*/
+        /*Comando PONG*/
         else if(strncmp(buffer, "PONG", 4) == 0){
             pthread_mutex_lock(&accesso_lavagna);
             for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
                 if(lavagna->utenti_connessi[i].porta_utente == porta_utente){
                     lavagna->utenti_connessi[i].pong_ricevuto = 1;
-                    printf("%d>>> Pong ricevuto.\n", porta_utente);
+                    printf("%d>>> Pong ricevuto.\n\n", porta_utente);
                     break;
                 }
             }
@@ -960,11 +968,15 @@ int main(){
 
     /* Binding del socket */
     if(bind(sd, (struct sockaddr *)&lavagna_addr, sizeof(lavagna_addr)) < 0) {
-        perror("Errore nel binding della socket");
+        if(errno == EADDRINUSE) {
+            fprintf(stderr, "Errore: la porta %d è già in uso.\n", PORTA_LAVAGNA);
+        } else {
+            perror("Errore nel binding della socket");
+        }
         close(sd);
         exit(EXIT_FAILURE);
     }
-    /* Messa in ascolto della socket */
+    /* Messa in ascolto del socket */
     listen(sd, MIN_UTENTI);
 
     /* Creazione thread ascolto comandi lavagna */

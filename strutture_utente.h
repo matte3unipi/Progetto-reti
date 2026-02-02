@@ -16,6 +16,7 @@ struct CARD_ASSEGNATA {
     int num_utenti;
     int review_ricevute;
     int card_done_inviata;
+    int ack_card_inviata;
 };
 struct CARD_ASSEGNATA card_assegnata;
 

@@ -1,5 +1,4 @@
 #define PORTA_LAVAGNA 5678
-#define MIN_CARD 10 
 #define NUM_COLONNE 3
 #define MIN_UTENTI 10
 #define RIGA_SEPARATORIA "<----------------------------------------\n"
