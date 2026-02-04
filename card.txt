@@ -1,10 +1,10 @@
-1:Implementare autenticazione utenti
-2:Creare database SQL
-3:Sviluppare interfaccia grafica
-4:Scrivere documentazione API
-5:Configurare server web
-6:Test unitari modulo login
-7:Ottimizzare query database
-8:Implementare funzione
-9:Setup amministrazione
-10:Code review
+1|Implementare autenticazione utenti
+2|Creare database SQL
+3|Sviluppare interfaccia grafica
+4|Scrivere documentazione API
+5|Configurare server web
+6|Test unitari modulo login
+7|Ottimizzare query database
+8|Implementare funzione
+9|Setup amministrazione
+10|Code review

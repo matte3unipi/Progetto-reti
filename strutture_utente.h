@@ -7,7 +7,6 @@
 volatile int hello_eseguito = 0;
 int porta_utente = 0;
 volatile int ping_ricevuto = 0;
-volatile int connessione_attiva = 0;
 
 struct CARD_ASSEGNATA {
     int id;

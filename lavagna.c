@@ -140,7 +140,9 @@ void* ping_user(void* arg){
     char msg[] = "PING";
     if(send_message(socket_utente, msg) < 0){
         perror("Errore nell'invio del ping all'utente");
+        pthread_mutex_lock(&accesso_lavagna);
         rimozione_utente(porta_utente);
+        pthread_mutex_unlock(&accesso_lavagna);
         close(socket_utente);
         return NULL;
     }
@@ -522,8 +524,9 @@ void handle_card(){
                 /* Invio la card all'utente */
                 if(send_message(lavagna->utenti_connessi[j].socket_id, msg) < 0){
                     perror("Errore nell'invio della card all'utente");
+                    continue;
                 }
-
+                
                 /* Segno l'utente come occupato */
                 lavagna->utenti_connessi[j].occupato = 1;
                 break;
@@ -541,8 +544,8 @@ Thread per il broadcast dello stato della lavagna agli utenti
     @param arg: non usato
 */
 void* lavagna_broadcast(void* arg){
-    pthread_mutex_lock(&accesso_lavagna);
     while(1){
+        pthread_mutex_lock(&accesso_lavagna);
         pthread_cond_wait(&lavagna_aggiornata, &accesso_lavagna);
         for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
             int sd_utente = lavagna->utenti_connessi[i].socket_id;
@@ -552,10 +555,14 @@ void* lavagna_broadcast(void* arg){
             if(send_show_lavagna(sd_utente) != 0){
                 printf("Errore nell'invio dello stato della lavagna alla porta %d.\n", 
                     lavagna->utenti_connessi[i].porta_utente);
+                int porta = lavagna->utenti_connessi[i].porta_utente;
+                rimozione_utente(porta);
+                close(sd_utente);
+                i--;
             }
         }
+        pthread_mutex_unlock(&accesso_lavagna);
     }
-    pthread_mutex_unlock(&accesso_lavagna);
     return NULL;
 }
 
@@ -674,9 +681,9 @@ void creazione_lavagna(){
         while (fgets(line, sizeof(line), file)) {
             line[strcspn(line, "\r\n")] = 0; 
 
-            char *elem = strtok(line, ":");
+            char *elem = strtok(line, CARATTERE_SEPARATORE);
             int id_card = atoi(elem);
-            elem = strtok(NULL, ":");
+            elem = strtok(NULL, CARATTERE_SEPARATORE);
             char *testo = elem;
 
             struct st_CARD new_card;
@@ -941,9 +948,6 @@ void* gestione_utente(void* arg){
 * ============================================================================ *
 */
 int main(){
-    creazione_lavagna();
-    show_lavagna();
-
     int sd, new_socket;
     struct sockaddr_in lavagna_addr, client_addr;
     socklen_t len = sizeof(client_addr);
@@ -978,6 +982,9 @@ int main(){
     }
     /* Messa in ascolto del socket */
     listen(sd, MIN_UTENTI);
+
+    creazione_lavagna();
+    show_lavagna();
 
     /* Creazione thread ascolto comandi lavagna */
     pthread_t thread_lavagna;

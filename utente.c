@@ -32,7 +32,7 @@ void hello_function(int sd) {
     }
 
     char msg[20];
-    sprintf(msg, "HELLO%s%d", CARATTERE_SEPARATORE, porta_utente);
+    snprintf(msg, sizeof(msg), "HELLO%s%d", CARATTERE_SEPARATORE, porta_utente);
 
     if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio HELLO");
@@ -55,7 +55,7 @@ int quit_function(int sd) {
     }
 
     char msg[20];
-    sprintf(msg, "QUIT");
+    snprintf(msg, sizeof(msg), "QUIT");
 
     if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio QUIT");
@@ -197,6 +197,11 @@ void ack_card_function(int sd) {
         return;
     }
 
+    if(card_assegnata.id < 0) {
+        printf("Non hai nessuna card assegnata.\n");
+        return;
+    }
+
     if(card_assegnata.ack_card_inviata == 1) {
         printf("Hai già inviato il comando ACK_CARD per questa card.\n");
         return;
@@ -208,7 +213,7 @@ void ack_card_function(int sd) {
     }
 
     char msg[50];
-    sprintf(msg, "ACK_CARD%s%d", CARATTERE_SEPARATORE, card_assegnata.id);
+    snprintf(msg, sizeof(msg), "ACK_CARD%s%d", CARATTERE_SEPARATORE, card_assegnata.id);
     if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio ACK_CARD");
         exit(EXIT_FAILURE);
@@ -244,7 +249,7 @@ void card_done_function(int sd) {
     }
 
     char msg[50];
-    sprintf(msg, "CARD_DONE%s%d", CARATTERE_SEPARATORE, card_assegnata.id);
+    snprintf(msg, sizeof(msg), "CARD_DONE%s%d", CARATTERE_SEPARATORE, card_assegnata.id);
     if(send_message(sd, msg) < 0) {
         perror("Errore durante l'invio del messaggio CARD_DONE");
         exit(EXIT_FAILURE);
@@ -362,6 +367,19 @@ void handle_card_function(const char* msg) {
     printf("     # ID: %d\n", card_assegnata.id);
     printf("     # Testo: %s\n\n", card_assegnata.testo);
     return;
+}
+
+/* 
+    Inizializza la struttura card_assegnata per evitare dati inconsistenti 
+*/
+void start_card_assegnata() {
+    card_assegnata.id = -1;
+    card_assegnata.testo[0] = '\0';
+    card_assegnata.porte_utenti = NULL;
+    card_assegnata.num_utenti = 0;
+    card_assegnata.review_ricevute = 0;
+    card_assegnata.card_done_inviata = 0;
+    card_assegnata.ack_card_inviata = 0;
 }
 
 void print_lavagna(const char* msg) {
@@ -558,7 +576,7 @@ void* gestione_p2p_review(void* arg) {
     }
     /* Invio della review */
     char review_msg[64];
-    sprintf(review_msg, "REVIEW_CARD%s%d", CARATTERE_SEPARATORE, card_assegnata.id);
+    snprintf(review_msg, sizeof(review_msg), "REVIEW_CARD%s%d", CARATTERE_SEPARATORE, card_assegnata.id);
     if(send_message(sd_p2p, review_msg) < 0) {
         perror("Errore nell'invio della REVIEW_CARD");
         close(sd_p2p);
@@ -596,6 +614,11 @@ void review_card_function(int sd) {
 
     if(card_assegnata.id < 0) {
         printf("Non hai nessuna card assegnata.\n");
+        return;
+    }
+
+    if(card_assegnata.ack_card_inviata == 0) {
+        printf("Devi prima inviare ACK_CARD per questa card.\n");
         return;
     }
 
@@ -645,7 +668,7 @@ void* server_p2p(void* arg) {
     sd_server = socket(AF_INET, SOCK_STREAM, 0);
     if(sd_server < 0) {
         perror("Errore nella creazione socket server P2P");
-        connessione_attiva = 0;
+        exit(EXIT_FAILURE);
         return NULL;
     }
 
@@ -655,8 +678,8 @@ void* server_p2p(void* arg) {
     addr_server.sin_port = htons(porta_utente);
     if(inet_pton(AF_INET, "127.0.0.1", &addr_server.sin_addr) <= 0) {
         perror("Errore nella conversione dell'indirizzo IP server P2P");
-        connessione_attiva = 0;
         close(sd_server);
+        exit(EXIT_FAILURE);
         return NULL;
     }
 
@@ -668,7 +691,6 @@ void* server_p2p(void* arg) {
         else {
             perror("Errore nel binding del socket server P2P");
         }
-        connessione_attiva = 0;
         close(sd_server);
         exit(EXIT_FAILURE);
         return NULL;
@@ -726,7 +748,7 @@ void* gestione_ascolto(void* arg) {
             } else {
                 printf("Connessione chiusa dalla lavagna.\n");
             }
-            connessione_attiva = 0;
+            exit(EXIT_FAILURE);
             break;
         }
     
@@ -826,7 +848,7 @@ int main(int argc, char *argv[]) {
     }
 
     printf("Connessione alla lavagna avvenuta con successo.\n");
-    connessione_attiva = 1;
+    start_card_assegnata();
 
     /* Server P2P per ricevere REVIEW_CARD */
     pthread_t thread_server_p2p;
@@ -850,7 +872,7 @@ int main(int argc, char *argv[]) {
     char comando[20];
 
     sleep(1);
-    while (connessione_attiva){        
+    while (1){        
         printf("Inserisci il comando:\n");
         if(fgets(comando, sizeof(comando), stdin) == NULL) {
             perror("Errore nella lettura del comando");
