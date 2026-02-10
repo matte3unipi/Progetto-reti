@@ -30,37 +30,39 @@ Il progetto è costituito da 6 file sorgente:
     \item \texttt{funzioni\_x\_msg.h} - Header delle funzioni di comunicazione
 \end{itemize}
 
-\noindent I file \texttt{funzioni\_x\_msg} sono utilizzati sia dal client sia dal server e contiene le 
+\noindent I file \texttt{funzioni\_x\_msg} sono utilizzati sia dal client sia dal server e contengono le 
 funzioni \texttt{send\_message()} e \\ 
-\texttt{recv\_message()}, che implementano il meccanismo di invio e ricezione dei messaggi.
-Nella cartella del progetto è presente uno script \texttt{compila.sh} che permette di compilare tutti i file sorgente con le flag richieste. 
+\texttt{recv\_message()}, che implementano il meccanismo di invio e ricezione dei messaggi (viene ripreso dopo).
+Nella cartella del progetto è presente uno script \texttt{compila.sh} che permette di compilare tutti i file sorgente con le flag richieste.
 È presente anche un file \texttt{card.txt} che contiene le card iniziali della lavagna, che verranno caricate all'avvio del server.
 
 \section*{Client-Server}
-Paradigma \texttt{client-server multi-thread}. \
-Il protocollo utilizzato è il \texttt{TCP} con \texttt{socket bloccanti}. l'utilizzo del TCP semplifica la gestione della comunicazione, in 
-quanto garantisce affidabilità e ordine dei messaggi, inoltre qualora ci siano disconnessioni queste vengono rilevate. 
+Architettura \texttt{client-server multi-thread}. Il protocollo utilizzato è il \texttt{TCP} con \texttt{socket bloccanti}; 
+l'utilizzo del TCP semplifica la gestione della comunicazione, in quanto garantisce affidabilità e ordine dei messaggi, inoltre qualora ci siano disconnessioni queste vengono rilevate.
+Il protocollo UDP non è stato scelto in quanto la velocità garantita non rappresenta un trade-off sufficiente rispetto alle qualità offerte dal TCP. 
 I socket bloccanti sono stati scelti per semplificare la logica di attesa dei messaggi, il server può gestire contemporaneamente 
 più client tramite thread dedicati, mentre il client può attendere in lettura messaggi asincroni dalla lavagna senza compromettere l'esecuzione. 
-IL protocollo UDP non è stato preso in considerazione in quanto non permetteva di offrire ciò che offre il TCP a discapito della velocità. 
-È stato definito un formato standard per lo scambio delle informazioni testuali. Ogni messaggio viene preceduto da un campo di lunghezza di 2 
-byte in formato binario (tipo \texttt{unsigned short}), convertito in network order tramite \texttt{htons/ntohs} per evitare problemi di endianess. 
-Questo approccio risolve il problema dei messaggi di lunghezza variabile evitando la necessità di delimitatori complessi. 
+È stato definito un formato standard per lo scambio delle informazioni testuali: ogni messaggio viene preceduto da un campo di lunghezza di 2 
+byte in formato binario (tipo \texttt{unsigned short}), convertito in network order tramite \texttt{htons/ntohs} per evitare problemi di endianess.
+Questo approccio permette di gestire messaggi di lunghezza variabile in modo efficiente, evitando l'invio di bytes in eccesso o limitazioni fisse sulla dimensione dei messaggi. 
 I campi all'interno del messaggio sono separati dal carattere \texttt{|}, definito nella costante \texttt{CARATTERE\_SEPARATORE}. 
 Il protocollo utilizzato permette di evitare la complessità di un protocollo interamente binario che richiederebbe serializzazione 
 delle strutture e gestione della compatibilità tra architetture diverse; allo stesso tempo semplifica il parsing rispetto a un protocollo testuale puro con delimitatori.
-Gli eventuali segnali SIGPIPE che la send può emettere sono soppressi tramite la flag \texttt{MSG\_NOSIGNAL}, prevenendo crash del 
-processo in caso di scrittura su socket chiuso.
+Gli eventuali segnali SIGPIPE che la send può emettere sono evitati tramite la flag \texttt{MSG\_NOSIGNAL}, prevenendo terminazioni inaspettate del 
+processo in caso di scrittura su socket chiuso.  
+La scelta del \texttt{multi-thread} è stata preferita rispetto all'I/O multiplexing per semplificare la gestione di operazioni bloccanti su più socket e rispetto alla \texttt{fork()}, 
+che comporta la duplicazione dell'intero spazio di memoria che va in contrasto con la scelta di gestione della memoria adottata. 
+I thread vengono \texttt{detached} per permettere la deallocazione automatica delle risorse al termine, evitando di trasformarli in thread zombie.
 
 
 \section*{Server (Lavagna)}
 \subsection*{Struttura dati}
 Le strutture utilizzate per l'implementazione della Lavagna sono principalmente quattro struct: \\
 \texttt{st\_lavagna}, \texttt{st\_colonna}, \texttt{st\_card} e \texttt{info\_utente}.
-La gestione in memoria di queste strutture è dinamica, con allocazione e deallocazione in base alle esigenze; la scelta di una gestione dinamica 
+La gestione in memoria di queste strutture è dinamica, con allocazione e deallocazione in base alle esigenze; questa scelta 
 è stata effettuata per ottimizzare l'uso della memoria e per permettere una maggiore flessibilità nella gestione delle card e degli utenti, 
 in quanto il numero di card e utenti connessi può variare nel tempo. 
-La struttura info\_utente contiene le informazioni relative ad ogni utente connesso, come la porta, il socket descriptor (utilizzato per la comunicazione), 
+La struttura \texttt{info\_utente} contiene le informazioni relative ad ogni utente connesso, come la porta, il socket descriptor (utilizzato per la comunicazione), 
 la flag di occupazione (indica se l'utente ha una card assegnata) e la flag pong\_ricevuto (utilizzata per il meccanismo di ping/pong). 
 L'identificazione degli utenti tramite porta invece che username semplifica l'architettura P2P, poiché la porta serve sia come identificativo univoco 
 che come indirizzo per le connessioni dirette. L'uso di \texttt{realloc()} per card e utenti permette scalabilità ma introduce overhead ad ogni 
@@ -71,24 +73,18 @@ L'approccio adottato per la gestione della lavagna è stato quello di utilizzare
 in quanto il server deve: gestire contemporaneamente più utenti che accedono e interagiscono con la stessa lavagna condivisa, gestire i comandi inseriti da terminale 
 e inviare periodicamente messaggi di ping agli utenti con card in DOING per verificare la loro disponibilità. 
 Per ogni connessione in ingresso viene creato un nuovo thread che gestisce i comandi in arrivo dal client. L'accesso alla lavagna è protetto 
-da un mutex globale (\texttt{accesso\_lavagna}) che garantisce la mutua esclusione sulle operazioni di 
-lettura/scrittura delle strutture condivise. Una variabile condition (\texttt{lavagna\_aggiornata}) viene utilizzata per implementare un meccanismo di notifica: 
+da un mutex globale (\texttt{accesso\_lavagna}) che garantisce la mutua esclusione nelle operazioni sulle strutture condivise. Una variabile condition (\texttt{lavagna\_aggiornata}) viene utilizzata per implementare un meccanismo di notifica: 
 ogni volta che lo stato della lavagna cambia (spostamento o completamento di una card), il thread che ha effettuato la modifica 
-segnala la condition, risvegliando il thread di broadcast che invia lo stato aggiornato a tutti i client connessi. 
-La scelta del paradigma multi-thread è stata preferita rispetto all'I/O multiplexing per poter parallelizzare le richieste, e rispetto alla \texttt{fork()}, 
-che comporta la duplicazione dell'intero spazio di memoria che va in contrasto con la scelta di gestione della memoria adottata. 
-I thread vengono detached per permettere la deallocazione automatica delle risorse al termine, evitando di trasformarli in thread zombie.
+segnala la condition, risvegliando il thread di broadcast che invia lo stato aggiornato a tutti i client connessi.
 
 \section*{Client (Utente)}
 \subsection*{Struttura dati}
 La struttura dati principale lato client è la struct \texttt{CARD\_ASSEGNATA}, che contiene le informazioni relative alla card attualmente assegnata all'utente: 
 ID della card, testo dell'attività, array dinamico delle porte degli altri utenti (per le review P2P), numero di utenti connessi, contatore delle review ricevute, 
-e flag per tracciare l'invio di ACK\_CARD e CARD\_DONE. Questa struttura viene allocata dinamicamente quando viene assegnata una nuova card e deallocata al completamento 
-o alla disconnessione. La scelta di mantenere localmente questi dati permette di validare i comandi dell'utente senza interrogare continuamente il server, riducendo 
+e flag per tracciare l'invio di ACK\_CARD e CARD\_DONE. La scelta di mantenere localmente questi dati permette di validare i comandi dell'utente senza interrogare continuamente il server, riducendo 
 il traffico di rete e migliorando la responsività dell'interfaccia. 
-Sono inoltre presenti variabili globali volatile per tracciare lo stato del client: \texttt{hello\_eseguito} (indica se l'utente si è registrato), 
+Sono inoltre presenti variabili globali per tracciare lo stato del client: \texttt{hello\_eseguito} (indica se l'utente si è registrato), 
 \texttt{ping\_ricevuto} (flag per il meccanismo di risposta al ping). 
-L'uso di volatile garantisce che le modifiche a queste variabili siano immediatamente visibili tra i thread, prevenendo ottimizzazioni indesiderate del compilatore.
 
 \subsection*{Approccio}
 Il client implementa un'architettura multi-thread composta da tre componenti principali: il thread principale gestisce l'interfaccia utente e l'invio dei comandi; 
@@ -96,7 +92,7 @@ un thread di ascolto (\texttt{gestione\_ascolto}) riceve messaggi asincroni dall
 un thread server P2P (\texttt{server\_p2p}) rimane in ascolto sulla porta dell'utente per ricevere richieste di review da altri utenti.
 
 \subsection*{Comunicazione P2P}
-Quando un utente esegue il comando REVIEW\_CARD, richiede prima la lista degli utenti connessi al server per avere dati aggiornati. Per ogni utente nella lista, 
+Quando un utente esegue il comando \texttt{REVIEW\_CARD}, richiede prima la lista degli utenti connessi al server per avere dati aggiornati. Per ogni utente nella lista, 
 viene creato un thread dedicato che stabilisce una connessione TCP diretta sulla porta dell'utente destinatario. L'incremento del contatore \texttt{review\_ricevute} 
 è protetto da un mutex poiché più thread possono modificarlo contemporaneamente. 
 La scelta della comunicazione P2P diretta per le review è stata preferita rispetto a un approccio mediato dal server per ridurre il carico sulla lavagna e 
@@ -105,15 +101,16 @@ se un utente si disconnette durante il processo di review.
 
 \subsection*{Gestione input}
 I comandi vengono letti tramite \texttt{fgets()} con verifica della presenza del newline 
-per rilevare input troppo lunghi; se il buffer viene superato, il contenuto residuo viene scartato leggendo fino al newline successivo. 
+per rilevare input troppo lunghi; se il buffer viene superato, il contenuto residuo viene scartato leggendo fino al newline successivo;
+l'inserimento di caratteri vuoti viene gestito correttamente. 
 Il carattere separatore \texttt{|} viene esplicitamente vietato nei testi delle card durante la creazione, prevenendo conflitti con il 
 protocollo di comunicazione che utilizza tale carattere come delimitatore di campo. Tutti i comandi sono sempre disponibili, ma vengono validati contestualmente 
 in base allo stato corrente. 
-Per evitare invii duplicati, vengono utilizzati flag (\texttt{ack\_card\_inviata}, \texttt{card\_done\_inviata}) che vengono resettati ad ogni nuova card assegnata 
-e controllati prima dell'invio del comando, impedendo comportamenti indesiderati causati da doppi invii.
+Per evitare comportamenti indesiderati causati da doppi invii, vengono utilizzati flag (\texttt{ack\_card\_inviata}, \texttt{card\_done\_inviata}) che vengono resettati ad ogni nuova card assegnata 
+e controllati prima dell'invio del comando.
 
 \section*{Esecuzione}
-\subsection*{Lavagna}
+\subsection*{Lavagna    (./lavagna)}
 Comandi disponibili da terminale:
 \begin{itemize}
     \item \texttt{SHOW\_LAVAGNA} - Visualizza lo stato attuale della lavagna con tutte le card
@@ -121,7 +118,7 @@ Comandi disponibili da terminale:
     \item \texttt{SEND\_USER\_LIST} - Invia la lista degli utenti connessi a tutti i client
 \end{itemize}
 
-\subsection*{Utente}
+\subsection*{Utente     (./utente porta)}
 Comandi utente da terminale:
 \begin{itemize}
     \item \texttt{HELLO} - Registra l'utente sulla lavagna (primo comando obbligatorio)
@@ -129,11 +126,9 @@ Comandi utente da terminale:
     \item \texttt{CREATE\_CARD} - Crea una nuova card in TO\_DO (richiede ID, colonna, testo)
     \item \texttt{ACK\_CARD} - Accetta la card assegnata, spostandola in DOING
     \item \texttt{REVIEW\_CARD} - Invia richieste di review P2P a tutti gli altri utenti 
-    \begin{itemize}
-        \item \texttt{REQUEST\_USER\_LIST} - Richiede la lista degli utenti connessi (viene eseguito automaticamente in \texttt{REVIEW\_CARD})
-    \end{itemize}
+    \item \texttt{REQUEST\_USER\_LIST} - Richiede la lista degli utenti connessi (viene eseguito automaticamente in \texttt{REVIEW\_CARD})
     \item \texttt{CARD\_DONE} - Completa la card (solo dopo aver ricevuto tutte le review)
     \item \texttt{PONG\_LAVAGNA} - Risponde al PING della lavagna
-    \item \texttt{QUIT} - Disconnette l'utente dalla lavagna
+    \item \texttt{QUIT} - Disconnette l'utente dalla lavagna e termina il programma.
 \end{itemize}
 \end{document}
