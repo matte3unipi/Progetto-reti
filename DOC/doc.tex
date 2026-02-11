@@ -45,7 +45,7 @@ più client tramite thread dedicati, mentre il client può attendere in lettura 
 È stato definito un formato standard per lo scambio delle informazioni testuali: ogni messaggio viene preceduto da un campo di lunghezza di 2 
 byte in formato binario (tipo \texttt{unsigned short}), convertito in network order tramite \texttt{htons/ntohs} per evitare problemi di endianess.
 Questo approccio permette di gestire messaggi di lunghezza variabile in modo efficiente, evitando l'invio di bytes in eccesso o limitazioni fisse sulla dimensione dei messaggi. 
-I campi all'interno del messaggio sono separati dal carattere \texttt{|}, definito nella costante \texttt{CARATTERE\_SEPARATORE}. 
+I campi all'interno del messaggio sono separati dal carattere "\texttt{|}", definito nella costante \texttt{CARATTERE\_SEPARATORE}. 
 Il protocollo utilizzato permette di evitare la complessità di un protocollo interamente binario che richiederebbe serializzazione 
 delle strutture e gestione della compatibilità tra architetture diverse; allo stesso tempo semplifica il parsing rispetto a un protocollo testuale puro con delimitatori.
 Gli eventuali segnali SIGPIPE che la send può emettere sono evitati tramite la flag \texttt{MSG\_NOSIGNAL}, prevenendo terminazioni inaspettate del 
@@ -57,7 +57,7 @@ I thread vengono \texttt{detached} per permettere la deallocazione automatica de
 
 \section*{Server (Lavagna)}
 \subsection*{Struttura dati}
-Le strutture utilizzate per l'implementazione della Lavagna sono principalmente quattro struct: \\
+Le strutture utilizzate per l'implementazione della Lavagna sono principalmente quattro: \\
 \texttt{st\_lavagna}, \texttt{st\_colonna}, \texttt{st\_card} e \texttt{info\_utente}.
 La gestione in memoria di queste strutture è dinamica, con allocazione e deallocazione in base alle esigenze; questa scelta 
 è stata effettuata per ottimizzare l'uso della memoria e per permettere una maggiore flessibilità nella gestione delle card e degli utenti, 
@@ -103,7 +103,7 @@ se un utente si disconnette durante il processo di review.
 I comandi vengono letti tramite \texttt{fgets()} con verifica della presenza del newline 
 per rilevare input troppo lunghi; se il buffer viene superato, il contenuto residuo viene scartato leggendo fino al newline successivo;
 l'inserimento di caratteri vuoti viene gestito correttamente. 
-Il carattere separatore \texttt{|} viene esplicitamente vietato nei testi delle card durante la creazione, prevenendo conflitti con il 
+Il carattere separatore "\texttt{|}" viene esplicitamente vietato nei testi delle card durante la creazione, prevenendo conflitti con il 
 protocollo di comunicazione che utilizza tale carattere come delimitatore di campo. Tutti i comandi sono sempre disponibili, ma vengono validati contestualmente 
 in base allo stato corrente. 
 Per evitare comportamenti indesiderati causati da doppi invii, vengono utilizzati flag (\texttt{ack\_card\_inviata}, \texttt{card\_done\_inviata}) che vengono resettati ad ogni nuova card assegnata 
