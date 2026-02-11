@@ -940,7 +940,8 @@ void* gestione_utente(void* arg){
                 send_message(sd_utente, risposta);                
             }
 
-            /* Una volta completata la card l'utente non è più occupato quindi riattribuisco una card */
+            /* Una volta completata la card l'utente non è più occupato quindi riattribuisco una card,
+            se presenti utenti disponibili sfrutto questa opportunità */
             handle_card();
 
             pthread_mutex_unlock(&accesso_lavagna);

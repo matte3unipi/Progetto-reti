@@ -250,8 +250,18 @@ void card_done_function(int sd) {
         return;
     }
 
+    if(card_assegnata.ack_card_inviata == 0) {
+        printf("Non puoi completare la card, non hai ancora inviato l'ACK_CARD.\n");
+        return;
+    }
+
     if(card_assegnata.card_done_inviata == 1) {
         printf("Hai già inviato il comando CARD_DONE per questa card.\n");
+        return;
+    }
+
+    if(card_assegnata.review_ricevute < 1) {
+        printf("Non puoi completare la card, non hai ricevuto nessuna review.\n");
         return;
     }
 
