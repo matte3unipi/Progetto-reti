@@ -264,6 +264,9 @@ int create_card(const char* dati, int porta_utente){
         return -1;
     }
     elem = strtok(NULL, CARATTERE_SEPARATORE);
+    if(elem == NULL) {
+        return -1;
+    }
     char *testo = elem;
 
     /*Verifico che l'id della card non sia già presente nella Lavagna*/
@@ -502,6 +505,16 @@ void handle_card(){
 
     int colonna_to_do = (int)TO_DO;
 
+    if(lavagna->colonne[colonna_to_do].numero_card == 0) {
+        printf("Nessuna card in TO_DO da gestire.\n\n");
+        return;
+    }
+
+    if(lavagna->numero_utenti_connessi == 0) {
+        printf("Nessun utente connesso a cui assegnare le card.\n\n");
+        return;
+    }
+
     for(int i = 0; i < lavagna->colonne[colonna_to_do].numero_card; i++){
 
         struct st_CARD card_selezionata = lavagna->colonne[colonna_to_do].cards[i];
@@ -539,8 +552,7 @@ void handle_card(){
         }
     }
 
-    printf("Card inviate, attesa ACK da parte degli utenti.\n");
-
+    printf("Card inviate, attesa ACK da parte degli utenti.\n\n");
     return;
 }
 
@@ -759,6 +771,13 @@ void* gestione_lavagna(void* arg){
         /*Comando SEND_USER_LIST*/
         else if (strcmp(comando, "SEND_USER_LIST")==0) {
             pthread_mutex_lock(&accesso_lavagna);
+
+            if(lavagna->numero_utenti_connessi == 0){
+                printf("Nessun utente connesso a cui inviare la lista utenti.\n\n");
+                pthread_mutex_unlock(&accesso_lavagna);
+                continue;
+            }
+
             for(int i = 0; i < lavagna->numero_utenti_connessi; i++){
                 int sd_utente = lavagna->utenti_connessi[i].socket_id;
                 int porta_utente = lavagna->utenti_connessi[i].porta_utente;
@@ -768,6 +787,7 @@ void* gestione_lavagna(void* arg){
                     printf("Lista utenti inviata con successo alla porta %d.\n", porta_utente);
                 }
             }
+            printf("\n");
             pthread_mutex_unlock(&accesso_lavagna);
             continue;
         }

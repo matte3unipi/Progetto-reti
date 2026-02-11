@@ -224,11 +224,6 @@ void ack_card_function(int sd) {
         return;
     }
 
-    if(card_assegnata.id < 0) {
-        printf("Non hai nessuna card assegnata.\n");
-        return;
-    }
-
     char msg[50];
     snprintf(msg, sizeof(msg), "ACK_CARD%s%d", CARATTERE_SEPARATORE, card_assegnata.id);
     if(send_message(sd, msg) < 0) {
@@ -321,7 +316,7 @@ Funzione per salvare la lista delle porte utenti ricevuta
     @param msg: lista utenti
 */
 void save_user_list(const char* msg) {
-    printf("Ricevuta lista utenti dalla lavagna.\n");
+    printf("\nRicevuta lista utenti dalla lavagna.\n");
 
     char lista_copia[1024];
     strncpy(lista_copia, msg, sizeof(lista_copia));
@@ -334,11 +329,22 @@ void save_user_list(const char* msg) {
         free(card_assegnata.porte_utenti);
     }
     card_assegnata.porte_utenti = malloc(card_assegnata.num_utenti * sizeof(int));
+    if(card_assegnata.porte_utenti == NULL) {
+        perror("Errore nell'allocazione delle porte");
+        return;
+    }
     for(int i = 0; i < card_assegnata.num_utenti; i++) {
         token = strtok(NULL, CARATTERE_SEPARATORE);
+        if(token == NULL) {
+            perror("Errore: numero di utenti dichiarato non corrisponde al numero di porte fornite.\n");
+            free(card_assegnata.porte_utenti);
+            card_assegnata.porte_utenti = NULL;
+            card_assegnata.num_utenti = 0;
+            return;
+        }
         card_assegnata.porte_utenti[i] = atoi(token);
     }
-    printf("Lista utenti salvata\n");
+    printf("Lista utenti salvata\n\n");
     return;
 }
 
@@ -354,11 +360,17 @@ void handle_card_function(const char* msg) {
 
     /* Estraggo i dati della card */
     char* token = strtok(testo_card, CARATTERE_SEPARATORE);
+    if(token == NULL) 
+        return;
     card_assegnata.id = atoi(token);
     token = strtok(NULL, CARATTERE_SEPARATORE);
+    if(token == NULL)
+        return;
     strncpy(card_assegnata.testo, token, sizeof(card_assegnata.testo) - 1);
     card_assegnata.testo[sizeof(card_assegnata.testo) - 1] = '\0';
     token = strtok(NULL, CARATTERE_SEPARATORE);
+    if(token == NULL)
+        return;
     card_assegnata.num_utenti = atoi(token);
     card_assegnata.review_ricevute = 0;
     card_assegnata.card_done_inviata = 0;
@@ -376,6 +388,13 @@ void handle_card_function(const char* msg) {
 
     for(int i = 0; i < card_assegnata.num_utenti; i++) {
         token = strtok(NULL, CARATTERE_SEPARATORE);
+        if(token == NULL) {
+            perror("Errore: numero di utenti dichiarato non corrisponde al numero di porte fornite.\n");
+            free(card_assegnata.porte_utenti);
+            card_assegnata.porte_utenti = NULL;
+            card_assegnata.num_utenti = 0;
+            return;
+        }
         card_assegnata.porte_utenti[i] = atoi(token);
     }
 
