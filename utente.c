@@ -118,6 +118,10 @@ void create_card_function(int sd) {
         return;
     }
     id_card_str[strcspn(id_card_str, "\n")] = 0;
+    if(strlen(id_card_str) == 0 || id_card_str[0] == ' ') {
+        printf("Errore: l'ID non può essere vuoto o iniziare con spazi.\n");
+        return;
+    }
 
     char colonna_card_str[8];
     printf("Inserisci la colonna della nuova card (TO_DO): ");
@@ -132,6 +136,10 @@ void create_card_function(int sd) {
         return;
     }
     colonna_card_str[strcspn(colonna_card_str, "\n")] = 0;
+    if(strcmp(colonna_card_str, "TO_DO") != 0) {
+        printf("Errore: la colonna deve essere TO_DO.\n");
+        return;
+    }
 
     char testo_card_str[256];
     printf("Inserisci il testo attività della nuova card: ");
@@ -151,6 +159,10 @@ void create_card_function(int sd) {
         return;
     }
     testo_card_str[strcspn(testo_card_str, "\n")] = 0;
+    if(strlen(testo_card_str) == 0 || testo_card_str[0] == ' ') {
+        printf("Errore: il testo non può essere vuoto o iniziare con spazi.\n");
+        return;
+    }
 
     char msg[300];
     snprintf(msg, sizeof(msg), "CREATE_CARD%s%s%s%s%s%s", CARATTERE_SEPARATORE, id_card_str, 
@@ -767,6 +779,7 @@ void* gestione_ascolto(void* arg) {
         /* Nuova card assegnata */
         else if(strncmp(buffer,"HANDLE_CARD",11)==0){
             handle_card_function(buffer + 12);
+            sleep(2);
             continue;
         }
         /* Risposta al ping */
@@ -872,7 +885,10 @@ int main(int argc, char *argv[]) {
     char comando[20];
 
     sleep(1);
-    while (1){        
+    while (1){  
+        if(card_assegnata.id >= 0 && card_assegnata.ack_card_inviata == 0) {
+            printf("!!! HAI UNA CARD IN ATTESA DI ACK.\n");
+        }      
         printf("Inserisci il comando:\n");
         if(fgets(comando, sizeof(comando), stdin) == NULL) {
             perror("Errore nella lettura del comando");

@@ -252,6 +252,11 @@ int create_card(const char* dati, int porta_utente){
 
     /* Estraggo i campi della card */
     char *elem = strtok(card_copia, CARATTERE_SEPARATORE);
+
+    /* Controllo che i campi siano presenti */
+    if(elem == NULL) {
+        return -1;
+    }
     int id_card = atoi(elem);
     elem = strtok(NULL, CARATTERE_SEPARATORE);
     STATO_COLONNA colonna = controllo_stato(elem);
@@ -767,7 +772,7 @@ void* gestione_lavagna(void* arg){
             continue;
         }
         else {
-            printf("Comando non riconosciuto.\n");
+            printf("Comando non riconosciuto.\n\n");
         }
     }
 
