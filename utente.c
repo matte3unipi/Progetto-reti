@@ -122,6 +122,11 @@ void create_card_function(int sd) {
         printf("Errore: l'ID non può essere vuoto o iniziare con spazi.\n");
         return;
     }
+    /* Controllo aggiuntivo, sarebbe comunque gestito correttamente lato server restituendo un errore */
+    if(strstr(id_card_str, CARATTERE_SEPARATORE) != NULL) {
+        printf("Errore: il carattere '%s' non è consentito nell'ID.\n", CARATTERE_SEPARATORE);
+        return;
+    }
 
     char colonna_card_str[8];
     printf("Inserisci la colonna della nuova card (TO_DO): ");
